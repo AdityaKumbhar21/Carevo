@@ -4,11 +4,11 @@ const validate = require('../middlewares/validate');
 const {
   setupProfileSchema,
   updateProfileSchema,
-} = require('../validations/profileValidation');
+} = require('../validators/profileValidator');
 const {
   setupProfile,
-  updateProfile,
   getProfile,
+  updateProfile
 } = require('../controllers/profileController');
 
 const router = express.Router();

@@ -1,7 +1,7 @@
 const {
   setupProfileSchema,
   updateProfileSchema,
-} = require('../validations/profileValidation');
+} = require('../validators/profileValidator');
 
 
 const setupProfile = async (req, res) => {
@@ -55,7 +55,24 @@ const updateProfile = async (req, res) => {
   }
 };
 
+const getProfile = async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // return sanitized user object (remove sensitive fields if present)
+    const { password, ...safeUser } = user.toObject ? user.toObject() : user;
+
+    res.json(safeUser);
+  } catch (err) {
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
 module.exports = {
   setupProfile,
   updateProfile,
+  getProfile,
 };
