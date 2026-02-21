@@ -2,7 +2,7 @@ const User = require('../models/User');
 const Gamification = require('../models/Gamification');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { sendEmail } = require('../services/emailService');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailService');
 
 const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
@@ -35,21 +35,17 @@ const register = async (req, res) => {
       user: user._id,
     });
 
-    const verifyUrl = `${process.env.CLIENT_URL}/verify-email/${rawToken}`;
+    const verifyUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/verify-email/${rawToken}`;
 
-    await sendEmail(
-      email,
-      'Verify Your Email',
-      `Click to verify your email: ${verifyUrl}`
-    );
+    await sendVerificationEmail(email, verifyUrl);
 
     res.status(201).json({
       msg: 'Registration successful. Please verify your email.',
     });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ msg: 'Server error' });
+    console.error('REGISTER ERROR:', err);
+    res.status(500).json({ msg: 'Server error', error: err.message });
   }
 };
 
@@ -80,7 +76,8 @@ const login = async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ msg: 'Server error' });
+    console.error('LOGIN ERROR:', err);
+    res.status(500).json({ msg: 'Server error', error: err.message });
   }
 };
 
