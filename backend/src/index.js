@@ -7,6 +7,7 @@ const careerRoutes = require('./routes/careerRoutes');
 const roadmapRoutes = require('./routes/roadmapRoutes');
 const gamificationRoutes = require('./routes/gamificationRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const careerDbaRoutes = require('./routes/careerDnaRoutes');
 require('./services/reminderCron').startCrons();
 const app = express();
 
@@ -22,6 +23,7 @@ app.use('/api/careers', careerRoutes);
 app.use('/api/roadmap', roadmapRoutes);
 app.use('/api/gamification', gamificationRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/career-dna', careerDbaRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
