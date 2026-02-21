@@ -11,18 +11,7 @@ const QuizSchema = new mongoose.Schema(
     career: {
       type: String,
       required: true,
-      enum: [
-        'Software Engineer',
-        'Data Scientist',
-        'Data Analyst',
-        'Product Manager',
-        'UI/UX Designer',
-        'Cybersecurity Analyst',
-        'Cloud Engineer',
-        'AI/ML Engineer',
-        'DevOps Engineer',
-        'Business Analyst',
-      ],
+      trim: true,
     },
 
     skill: {
@@ -51,7 +40,16 @@ const QuizSchema = new mongoose.Schema(
       default: 'validation',
     },
 
-    
+    // Questions stored with answers hidden by default
+    questions: [
+      {
+        questionId: { type: String },
+        question: { type: String },
+        options: [{ type: String }],
+        correctAnswer: { type: String, select: false },
+      },
+    ],
+
     correctAnswerKey: [
       {
         questionId: String,

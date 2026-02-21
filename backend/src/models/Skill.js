@@ -11,18 +11,7 @@ const SkillSchema = new mongoose.Schema(
     career: {
       type: String,
       required: true,
-      enum: [
-        'Software Engineer',
-        'Data Scientist',
-        'Data Analyst',
-        'Product Manager',
-        'UI/UX Designer',
-        'Cybersecurity Analyst',
-        'Cloud Engineer',
-        'AI/ML Engineer',
-        'DevOps Engineer',
-        'Business Analyst',
-      ],
+      trim: true,
     },
 
     skills: [

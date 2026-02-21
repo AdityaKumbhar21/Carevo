@@ -4,49 +4,19 @@ import { BookOpen, Target, Sliders, BrainCircuit, ArrowRight, ArrowLeft, CheckCi
 import { GlassCard } from '../components/GlassCard';
 import { careerAPI, profileAPI } from '../services/api';
 
-// Fallback careers data
-const DEFAULT_CAREERS = [
-  { 
-    id: 'se', name: 'Software Engineer', icon: Code,
-    skills: ['javascript', 'data structures', 'system design', 'react']
-  },
-  { 
-    id: 'ds', name: 'Data Scientist', icon: Database,
-    skills: ['python', 'statistics', 'machine learning', 'data visualization']
-  },
-  { 
-    id: 'da', name: 'Data Analyst', icon: TrendingUp,
-    skills: ['sql', 'excel', 'power bi', 'statistics']
-  },
-  { 
-    id: 'pm', name: 'Product Manager', icon: Target,
-    skills: ['product strategy', 'communication', 'market research', 'analytics']
-  },
-  { 
-    id: 'ux', name: 'UI/UX Designer', icon: Layout,
-    skills: ['figma', 'user research', 'prototyping', 'design systems']
-  },
-  { 
-    id: 'cs', name: 'Cybersecurity Analyst', icon: Shield,
-    skills: ['network security', 'ethical hacking', 'linux', 'cryptography']
-  },
-  { 
-    id: 'ce', name: 'Cloud Engineer', icon: Cloud,
-    skills: ['aws', 'docker', 'kubernetes', 'linux']
-  },
-  { 
-    id: 'ai', name: 'AI/ML Engineer', icon: BrainCircuit,
-    skills: ['python', 'deep learning', 'linear algebra', 'data engineering']
-  },
-  { 
-    id: 'de', name: 'DevOps Engineer', icon: Terminal,
-    skills: ['ci/cd', 'docker', 'kubernetes', 'linux']
-  },
-  { 
-    id: 'ba', name: 'Business Analyst', icon: Briefcase,
-    skills: ['requirement gathering', 'communication', 'sql', 'data analysis']
-  },
-];
+// Icon mapping by career name
+const CAREER_ICON_MAP = {
+  'Software Engineer': Code,
+  'Data Scientist': Database,
+  'Data Analyst': TrendingUp,
+  'Product Manager': Target,
+  'UI/UX Designer': Layout,
+  'Cybersecurity Analyst': Shield,
+  'Cloud Engineer': Cloud,
+  'AI/ML Engineer': BrainCircuit,
+  'DevOps Engineer': Terminal,
+  'Business Analyst': Briefcase,
+};
 
 // Helper to determine string label for skill level
 const getSkillLevelLabel = (score) => {
@@ -57,14 +27,24 @@ const getSkillLevelLabel = (score) => {
 };
 
 export default function Onboarding({ onComplete }) {
-  const [careers, setCareers] = useState(DEFAULT_CAREERS);
+  const [careers, setCareers] = useState([]);
   const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   
   // Form States
   const [educationLevel, setEducationLevel] = useState(''); 
+  const [course, setCourse] = useState('');
+  const [yearOfStudy, setYearOfStudy] = useState('');
   const [studyHours, setStudyHours] = useState(''); 
+  const [availableHours, setAvailableHours] = useState('');
+  const [resumeText, setResumeText] = useState('');
+  const [resumeFile, setResumeFile] = useState(null);
+  const [extractedSkills, setExtractedSkills] = useState([]);
+  const [extractedExperience, setExtractedExperience] = useState([]);
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [selectedCareers, setSelectedCareers] = useState([]);
   
   // Dynamic Skill Ratings Object
@@ -76,13 +56,23 @@ export default function Onboarding({ onComplete }) {
   useEffect(() => {
     const fetchCareers = async () => {
       try {
+        setLoading(true);
         const response = await careerAPI.getCareers();
         if (response.data && response.data.length > 0) {
-          setCareers(response.data);
+          // Map API data to include icon components and skill names
+          const mapped = response.data.map(c => ({
+            id: c._id,
+            name: c.name,
+            icon: CAREER_ICON_MAP[c.name] || BrainCircuit,
+            skills: c.skills ? c.skills.map(s => s.name.toLowerCase()) : [],
+          }));
+          setCareers(mapped);
         }
       } catch (err) {
         console.error('Failed to fetch careers:', err);
-        // Keep using default careers
+        setError('Failed to load careers. Please refresh.');
+      } finally {
+        setLoading(false);
       }
     };
     fetchCareers();
@@ -91,23 +81,24 @@ export default function Onboarding({ onComplete }) {
   // Extract unique skills based on selected careers
   const derivedSkills = useMemo(() => {
     const skillsSet = new Set();
-    selectedCareers.forEach(careerId => {
+    // selectedCareers intentionally supports only one selection now
+    if (selectedCareers.length > 0) {
+      const careerId = selectedCareers[0];
       const career = careers.find(c => c.id === careerId);
-      if (career && career.skills) {
-        career.skills.forEach(skill => skillsSet.add(skill));
-      }
-    });
+      if (career && career.skills) career.skills.forEach(skill => skillsSet.add(skill));
+    }
     return Array.from(skillsSet);
   }, [selectedCareers, careers]);
 
   // Filter out skills that have already been added to the profile
   const unaddedSkills = derivedSkills.filter(skill => skillRatings[skill] === undefined);
 
+  // Now restrict selection to a single career (choose 1 of 10)
   const toggleCareer = (id) => {
     if (selectedCareers.includes(id)) {
-      setSelectedCareers(selectedCareers.filter(c => c !== id));
-    } else if (selectedCareers.length < 3) {
-      setSelectedCareers([...selectedCareers, id]);
+      setSelectedCareers([]);
+    } else {
+      setSelectedCareers([id]);
     }
   };
 
@@ -121,6 +112,130 @@ export default function Onboarding({ onComplete }) {
       setCurrentLevelSelect('25'); // Reset level
       setError('');
     }
+  };
+
+  // Simple resume parser: find a Skills section and an Experience section
+  const parseResumeForSkillsAndExperience = (text) => {
+    if (!text || !text.trim()) return { skills: [], experience: [] };
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+    const lowerLines = lines.map(l => l.toLowerCase());
+    const skillHeadings = ['skills', 'technical skills', 'skills & tools', 'skills:', 'expertise', 'technical stack'];
+    const expHeadings = ['experience', 'work experience', 'professional experience', 'employment', 'work history'];
+
+    const findHeadingIndex = (headings) => {
+      for (let i = 0; i < lowerLines.length; i++) {
+        for (const h of headings) {
+          if (lowerLines[i].includes(h)) return i;
+        }
+      }
+      return -1;
+    };
+
+    const skillsIdx = findHeadingIndex(skillHeadings);
+    const expIdx = findHeadingIndex(expHeadings);
+
+    let skills = [];
+    const techKeywords = ['javascript','python','java','react','node','sql','docker','aws','kubernetes','html','css','typescript','c++','c#','git','linux','tensorflow','pytorch','excel','tableau','powerbi','azure','gcp','mongodb','postgres','mysql','redux','graphql','rest','django','flask','spring','spark','hadoop','matlab','r','scala'];
+
+    const splitTokens = (line) => line.split(/[•·\-\*;,\/\\|\(\)]|\band\b|\s{2,}/).map(t => t.trim()).filter(Boolean);
+
+    if (skillsIdx !== -1) {
+      // collect lines after heading until next blank or next heading
+      for (let i = skillsIdx + 1; i < lines.length && i < skillsIdx + 20; i++) {
+        const l = lines[i];
+        if (!l) break;
+        const low = l.toLowerCase();
+        if (skillHeadings.some(h => low.includes(h)) || expHeadings.some(h => low.includes(h))) break;
+        // prefer lines that look like lists (commas, bullets) or short token lists
+        if (l.includes(',') || l.includes('•') || splitTokens(l).length <= 8) {
+          const tokens = splitTokens(l);
+          tokens.forEach(tok => {
+            const cleaned = tok.replace(/[().]/g, '').trim();
+            if (cleaned.length > 1 && !/^[0-9]+$/.test(cleaned)) skills.push(cleaned);
+          });
+        }
+      }
+    }
+
+    // Fallback: scan whole document for likely skill lines if none found above
+    if (skills.length === 0) {
+      for (let i = 0; i < lines.length; i++) {
+        const l = lines[i];
+        const low = l.toLowerCase();
+        // heuristics: many commas OR contains tech keywords OR is short list-like
+        const tokens = splitTokens(l);
+        const containsTech = techKeywords.some(k => low.includes(k));
+        if (l.split(',').length >= 3 || containsTech || (tokens.length > 1 && tokens.length <= 8 && tokens.some(t => /[A-Za-z]/.test(t) && t.length < 40))) {
+          tokens.forEach(tok => {
+            const cleaned = tok.replace(/[().]/g, '').trim();
+            if (cleaned.length > 1 && !/^[0-9]+$/.test(cleaned)) skills.push(cleaned);
+          });
+        }
+        if (skills.length >= 40) break;
+      }
+    }
+
+    // dedupe, normalize
+    skills = Array.from(new Set(skills.map(s => s.replace(/\s+/g, ' ').trim()))).filter(s => s.length > 1 && s.length < 120);
+
+    // score and prioritize likely technical skills (prefer tokens containing tech keywords or short phrases)
+    const scoreToken = (tok) => {
+      const low = tok.toLowerCase();
+      let score = 0;
+      if (techKeywords.some(k => low.includes(k))) score += 10;
+      if (tok.length < 20) score += 5;
+      const words = tok.split(/\s+/).length;
+      if (words <= 3) score += 3;
+      if (/[,;:\/\\]/.test(tok)) score += 1;
+      return score;
+    };
+
+    skills.sort((a, b) => scoreToken(b) - scoreToken(a));
+    // keep only short phrases (<=4 words) or ones that contain known tech keywords
+    skills = skills.filter(s => s.split(/\s+/).length <= 4 || techKeywords.some(k => s.toLowerCase().includes(k)));
+    if (skills.length > 30) skills = skills.slice(0, 30);
+
+    let experience = [];
+    if (expIdx !== -1) {
+      // collect paragraph blocks under experience heading
+      const blocks = [];
+      let current = [];
+      for (let i = expIdx + 1; i < lines.length; i++) {
+        const l = lines[i];
+        if (!l) {
+          if (current.length) { blocks.push(current.join(' ')); current = []; }
+          continue;
+        }
+        // break if next major section
+        if (skillHeadings.some(h => l.toLowerCase().includes(h))) break;
+        // treat uppercase-start lines with company/role hints as separators
+        if (/^[A-Z][A-Za-z0-9 ,.-]{4,}$/.test(l) && current.length) { blocks.push(current.join(' ')); current = [l]; continue; }
+        current.push(l);
+      }
+      if (current.length) blocks.push(current.join(' '));
+
+      // keep blocks that contain years or 'year' text or look like role/company lines
+      for (const b of blocks) {
+        if (/(19|20)\d{2}|\byears?\b|\bmonth\b/i.test(b) || /\bexperience\b/i.test(b)) {
+          experience.push(b);
+        } else if (b.split(' ').length <= 6 && /[A-Z][a-z]+/.test(b)) {
+          experience.push(b);
+        }
+      }
+    } else {
+      // fallback: lines containing years or 'worked at' patterns
+      for (const l of lines) {
+        if (/(19|20)\d{2}|\bexperience\b|\bworked at\b|\bexperience as\b|\bat\b/i.test(l)) {
+          experience.push(l);
+        }
+      }
+    }
+
+    // dedupe experience and limit
+    experience = Array.from(new Set(experience)).slice(0, 20);
+
+    return { skills, experience };
   };
 
   const handleRemoveSkill = (skillToRemove) => {
@@ -176,6 +291,12 @@ export default function Onboarding({ onComplete }) {
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#8c5bf5]/20 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#4f46e5]/20 blur-[120px] rounded-full pointer-events-none" />
 
+      {loading ? (
+        <div className="flex flex-col items-center gap-4 z-10">
+          <div className="w-12 h-12 border-4 border-[#8c5bf5]/20 border-t-[#8c5bf5] rounded-full animate-spin"></div>
+          <p className="text-slate-400 text-sm">Loading career paths...</p>
+        </div>
+      ) : (
       <div className="w-full max-w-3xl z-10">
         <div className="mb-8">
           <div className="flex justify-between items-end mb-4">
@@ -240,7 +361,10 @@ export default function Onboarding({ onComplete }) {
                         {educationLevel === 'wp' ? 'Years of Experience' : 'Year of Study'}
                       </label>
                       <div className="relative">
-                        <select className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-4 pr-10 text-white focus:outline-none focus:border-[#8c5bf5] appearance-none cursor-pointer">
+                        <select
+                          value={yearOfStudy}
+                          onChange={(e) => { setYearOfStudy(e.target.value); setError(''); }}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-4 pr-10 text-white focus:outline-none focus:border-[#8c5bf5] appearance-none cursor-pointer">
                           {educationLevel === 'wp' ? (
                             <>
                               <option value="" className="bg-[#161022]">Select Experience</option>
@@ -263,8 +387,8 @@ export default function Onboarding({ onComplete }) {
                       </div>
                     </div>
 
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Daily Available Study Hours</label>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Daily Study Hours</label>
                       <input 
                         type="number" 
                         placeholder="e.g. 2" 
@@ -276,6 +400,49 @@ export default function Onboarding({ onComplete }) {
                             : 'border-white/10 focus:border-[#8c5bf5] focus:ring-[#8c5bf5]'
                         }`} 
                       />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Daily Available Hours</label>
+                      <input 
+                        type="number" 
+                        placeholder="e.g. 4" 
+                        value={availableHours}
+                        onChange={(e) => { setAvailableHours(e.target.value); setError(''); }}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:border-[#8c5bf5] focus:ring-[#8c5bf5] transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Course / Stream</label>
+                      <div className="relative">
+                        <select 
+                          value={course}
+                          onChange={(e) => { setCourse(e.target.value); setError(''); }}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-4 pr-10 text-white focus:outline-none focus:border-[#8c5bf5] appearance-none cursor-pointer"
+                        >
+                          <option value="" className="bg-[#161022]">Select Course</option>
+                          <option value="engineering" className="bg-[#161022]">Engineering</option>
+                          <option value="science" className="bg-[#161022]">Science</option>
+                          <option value="commerce" className="bg-[#161022]">Commerce</option>
+                          <option value="arts" className="bg-[#161022]">Arts</option>
+                          <option value="other" className="bg-[#161022]">Other</option>
+                        </select>
+                        <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Resume <span className="text-slate-600 normal-case font-normal">(optional — paste plain text)</span></label>
+                      <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4">
+                        <textarea
+                          placeholder="Paste your resume text here (optional)."
+                          value={resumeText}
+                          onChange={(e) => { setResumeText(e.target.value); setExtractedSkills([]); setExtractedExperience([]); }}
+                          className="w-full min-h-[140px] bg-transparent text-sm text-slate-200 placeholder-slate-500 p-3 rounded resize-y focus:outline-none border border-white/5"
+                        />
+                        <p className="text-xs text-slate-500 mt-2">Tip: Paste plain text or copy-paste from your document. PDF/image OCR is disabled for now.</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -289,11 +456,11 @@ export default function Onboarding({ onComplete }) {
                       <div className="p-3 rounded-xl bg-blue-500/20 text-blue-400"><Target size={24} /></div>
                       <h2 className="text-2xl font-bold text-white">Target Horizons</h2>
                     </div>
-                    <span className="text-sm font-medium text-slate-400">Select up to 3</span>
+                    <span className="text-sm font-medium text-slate-400">Select 1 of 10</span>
                   </div>
                   
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                    {careers.map(career => {
+                    {careers.slice(0, 10).map(career => {
                       const isSelected = selectedCareers.includes(career.id);
                       return (
                         <button 
@@ -468,17 +635,74 @@ export default function Onboarding({ onComplete }) {
                   Continue <ArrowRight size={18} />
                 </button>
               ) : (
-                <button onClick={() => {
-                  console.log("Saving user profile data:", { educationLevel, studyHours, selectedCareers, skillRatings });
-                  onComplete();
-                }} className="px-8 py-3 bg-gradient-to-r from-[#8c5bf5] to-[#4f46e5] text-white font-black rounded-full hover:shadow-[0_0_20px_rgba(140,91,245,0.4)] hover:scale-105 flex items-center gap-2 transition-all">
-                  Commence Adaptive Quiz <BrainCircuit size={18} />
+                <button onClick={async () => {
+                  setSaving(true);
+                  setError('');
+                  try {
+                    // Get career names from selected IDs
+                    const careerNames = selectedCareers.map(id => {
+                      const career = careers.find(c => c.id === id);
+                      return career ? career.name : id;
+                    });
+
+                    // Normalize skillRatings values to numbers to satisfy backend validator
+                    const normalizedSkillRatings = {};
+                    if (skillRatings && typeof skillRatings === 'object') {
+                      Object.entries(skillRatings).forEach(([k, v]) => {
+                        const num = Number(v);
+                        if (!Number.isNaN(num)) normalizedSkillRatings[k] = num;
+                      });
+                    }
+
+                    const payload = {
+                      educationLevel,
+                      currentCourse: course,
+                      yearOfStudy,
+                      dailyStudyHours: parseFloat(studyHours),
+                      dailyAvailableHours: availableHours ? parseFloat(availableHours) : undefined,
+                      resumeText: resumeText?.trim() ? resumeText.trim() : undefined,
+                      resumeSkills: extractedSkills && extractedSkills.length ? extractedSkills : undefined,
+                      resumeExperience: extractedExperience && extractedExperience.length ? extractedExperience : undefined,
+                      careerInterests: careerNames,
+                      hasOnboarded: true,
+                      skillRatings: Object.keys(normalizedSkillRatings).length ? normalizedSkillRatings : undefined,
+                    };
+
+                    // Debug: log payload before sending
+                    console.debug('Profile setup payload:', payload);
+
+                    const res = await profileAPI.setupProfile(payload);
+                    onComplete();
+                  } catch (err) {
+                    console.error('Failed to save profile:', err);
+                    // Surface Zod validation errors if present
+                    const apiErr = err.response?.data;
+                    if (apiErr) {
+                      if (apiErr.errors && Array.isArray(apiErr.errors)) {
+                        setError(apiErr.errors.map(e => `${e.field || ''}: ${e.message}`).join(' | '));
+                      } else if (apiErr.msg) {
+                        setError(apiErr.msg);
+                      } else {
+                        setError('Failed to save profile. See console for details.');
+                      }
+                    } else {
+                      setError('Failed to save profile. Please try again.');
+                    }
+                    setSaving(false);
+                  }
+                }} disabled={saving} className="px-8 py-3 bg-gradient-to-r from-[#8c5bf5] to-[#4f46e5] text-white font-black rounded-full hover:shadow-[0_0_20px_rgba(140,91,245,0.4)] hover:scale-105 flex items-center gap-2 transition-all disabled:opacity-70">
+                  {saving ? (
+                    <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> Saving...</>
+                  ) : (
+                    <>Commence Adaptive Quiz <BrainCircuit size={18} /></>
+                  )}
                 </button>
               )}
             </div>
           </div>
         </GlassCard>
       </div>
+      )}
     </div>
   );
 }

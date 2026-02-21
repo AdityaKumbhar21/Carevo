@@ -2,38 +2,85 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BrainCircuit, ChevronDown, ChevronUp, Check, Play, Lock, 
-  MoreHorizontal, Sparkles, Calendar, Clock, ArrowRight 
+  MoreHorizontal, Sparkles, Calendar, Clock, ArrowRight, Loader2 
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
-import { roadmapAPI } from '../services/api';
+import { roadmapAPI, profileAPI, careerAPI, taskAPI } from '../services/api';
 
 export default function Roadmap() {
-  // States to control the generation flow
   const [isGenerated, setIsGenerated] = useState(false);
   const [isGenerating, setIsGenerating] = useState(true);
   const [roadmapData, setRoadmapData] = useState(null);
+  const [tasks, setTasks] = useState([]);
   const [error, setError] = useState('');
+  const [careerId, setCareerId] = useState(null);
+  const [careerName, setCareerName] = useState('');
   
-  // Form States
   const [roadmapDays, setRoadmapDays] = useState('30');
   const [dailyHours, setDailyHours] = useState('2');
+  const [expandedDay, setExpandedDay] = useState(null);
 
-  // Accordion State for the Roadmap
-  const [expandedPhase, setExpandedPhase] = useState(null);
+  const roadmapLoadingMessages = [
+    'Architecting your personalized learning path...',
+    'Calculating optimal skill progression...',
+    'Designing daily challenges just for you...',
+    'Mapping milestones across your journey...',
+    'AI is crafting your success blueprint...',
+    'Plotting the fastest route to your dream career...',
+    'Preparing bite-sized daily goals...',
+    'Almost there... your roadmap is taking shape!'
+  ];
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
 
-  // Fetch existing roadmap on mount
   useEffect(() => {
-    const fetchRoadmap = async () => {
+    if (!isGenerating) return;
+    const interval = setInterval(() => setLoadingMsgIdx(i => (i + 1) % roadmapLoadingMessages.length), 2500);
+    return () => clearInterval(interval);
+  }, [isGenerating]);
+
+  useEffect(() => {
+    const init = async () => {
       try {
         setIsGenerating(true);
-        const response = await roadmapAPI.getRoadmap();
-        if (response.data && response.data.phases) {
-          setRoadmapData(response.data);
+        // Get user's primary career interest
+        const profileRes = await profileAPI.getProfile();
+        const user = profileRes.data.user || profileRes.data;
+        const interests = user.careerInterests || [];
+        
+        if (interests.length === 0) {
+          setIsGenerating(false);
+          return;
+        }
+
+        // Find the career ID for the first interest
+        const careersRes = await careerAPI.getCareers();
+        const allCareers = careersRes.data.careers || careersRes.data || [];
+        const career = allCareers.find(c => c.name === interests[0]);
+        
+        if (!career) {
+          setIsGenerating(false);
+          return;
+        }
+
+        setCareerId(career._id);
+        setCareerName(career.name);
+
+        // Try to fetch existing roadmap
+        const roadmapRes = await roadmapAPI.getRoadmap(career._id);
+        if (roadmapRes.data) {
+          setRoadmapData(roadmapRes.data.roadmap || roadmapRes.data);
+          
+          // Fetch tasks for today to show in timeline
+          try {
+            const tasksRes = await taskAPI.getTodayTasks();
+            setTasks(tasksRes.data.tasks || tasksRes.data || []);
+          } catch (e) {
+            // No tasks yet is fine
+          }
+          
           setIsGenerated(true);
-          setExpandedPhase(1);
         }
       } catch (err) {
-        // Roadmap may not exist yet, which is fine
         console.log('No existing roadmap found');
         setIsGenerated(false);
       } finally {
@@ -41,29 +88,62 @@ export default function Roadmap() {
       }
     };
 
-    fetchRoadmap();
+    init();
   }, []);
 
   const handleGenerate = async () => {
+    if (!careerId) {
+      setError('No career selected. Complete onboarding first.');
+      return;
+    }
     setError('');
     setIsGenerating(true);
     
     try {
       const response = await roadmapAPI.generateRoadmap({
+        careerId,
         targetDays: parseInt(roadmapDays),
         dailyHours: parseInt(dailyHours)
       });
       
-      setRoadmapData(response.data);
+      // Re-fetch the full roadmap
+      const roadmapRes = await roadmapAPI.getRoadmap(careerId);
+      setRoadmapData(roadmapRes.data.roadmap || roadmapRes.data);
+      
+      try {
+        const tasksRes = await taskAPI.getTodayTasks();
+        setTasks(tasksRes.data.tasks || tasksRes.data || []);
+      } catch (e) {}
+      
       setIsGenerated(true);
-      setExpandedPhase(1);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to generate roadmap');
+      setError(err.response?.data?.msg || err.response?.data?.message || 'Failed to generate roadmap');
       console.error(err);
     } finally {
       setIsGenerating(false);
     }
   };
+
+  // Loading state
+  if (isGenerating && !isGenerated) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <Loader2 size={48} className="animate-spin text-[#8c5bf5]" />
+          </div>
+          <motion.p
+            key={loadingMsgIdx}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-slate-400 text-sm font-medium text-center max-w-xs"
+          >
+            {roadmapLoadingMessages[loadingMsgIdx]}
+          </motion.p>
+        </div>
+      </div>
+    );
+  }
 
   // -------------------------------------------------------------------
   // VIEW 1: CONFIGURATION FORM
@@ -81,7 +161,7 @@ export default function Roadmap() {
             </div>
             <h2 className="text-3xl font-black text-white tracking-tight">Generate AI Roadmap</h2>
             <p className="text-slate-400 mt-2 text-sm leading-relaxed">
-              Configure your learning parameters. The AI will generate a custom path to become an <span className="text-white font-bold">AI Software Engineer</span>.
+              Configure your learning parameters. The AI will generate a custom path to become a <span className="text-white font-bold">{careerName || 'career professional'}</span>.
             </p>
           </div>
 
@@ -164,39 +244,8 @@ export default function Roadmap() {
   // -------------------------------------------------------------------
   // VIEW 2: THE GENERATED ROADMAP
   // -------------------------------------------------------------------
-  const phases = roadmapData?.phases || [
-    {
-      id: 1,
-      title: 'Foundation',
-      status: 'COMPLETED',
-      description: 'Python basics, data structures, and algorithmic complexity.',
-      icon: 'check',
-      progress: 100,
-      tasks: []
-    },
-    {
-      id: 2,
-      title: 'Core Skills',
-      status: 'IN PROGRESS',
-      description: 'Machine Learning fundamentals, deep learning, and neural architectures.',
-      icon: 'play',
-      progress: 42,
-      tasks: [
-        { day: 14, title: 'Linear & Logistic Regression Models', status: 'completed', action: 'Review' },
-        { day: 15, title: 'Neural Networks: Perceptrons & Layers', status: 'current', action: 'Continue' },
-        { day: 16, title: 'Backpropagation & Gradient Descent', status: 'locked', action: 'Locked' }
-      ]
-    },
-    {
-      id: 3,
-      title: 'Advanced Architectures',
-      status: 'LOCKED',
-      description: 'Transformers, CNNs, and productionizing AI models.',
-      icon: 'lock',
-      progress: 0,
-      tasks: []
-    }
-  ];
+  const progress = roadmapData?.progressPercentage ?? roadmapData?.progress ?? 0;
+  const totalDays = roadmapData?.totalDays ?? parseInt(roadmapDays);
 
   return (
     <div className="flex flex-col gap-8 pb-10 max-w-5xl mx-auto w-full mt-4">
@@ -206,19 +255,19 @@ export default function Roadmap() {
         <div>
           <h1 className="text-4xl font-black text-white tracking-tight mb-2">Career Roadmap</h1>
           <p className="text-slate-400 flex items-center gap-2 text-sm font-medium">
-            <BrainCircuit size={16} className="text-[#8c5bf5]" /> AI Software Engineer Path • Estimated {roadmapDays} days to completion
+            <BrainCircuit size={16} className="text-[#8c5bf5]" /> {careerName || 'Career'} Path &bull; {totalDays} day plan
           </p>
         </div>
         
         <div className="w-full md:w-64">
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm font-medium text-slate-300">Overall Progress</span>
-            <span className="text-sm font-bold text-[#8c5bf5]">{roadmapData?.progress || 42}% Complete</span>
+            <span className="text-sm font-bold text-[#8c5bf5]">{progress}% Complete</span>
           </div>
           <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
             <motion.div 
               initial={{ width: 0 }} 
-              animate={{ width: `${roadmapData?.progress || 42}%` }} 
+              animate={{ width: `${progress}%` }} 
               transition={{ duration: 1, delay: 0.5 }} 
               className="h-full bg-[#8c5bf5] rounded-full shadow-[0_0_10px_rgba(140,91,245,0.5)]" 
             />
@@ -226,119 +275,55 @@ export default function Roadmap() {
         </div>
       </div>
 
-      {/* Timeline Layout */}
-      <div className="relative mt-4">
-        {/* The Vertical Purple Line */}
-        <div className="absolute left-[19px] top-6 bottom-6 w-0.5 bg-[#8c5bf5]/20" />
-
-        <div className="space-y-6">
-          
-          {phases.map((phase, index) => {
-            const isCompleted = phase.status === 'COMPLETED';
-            const isInProgress = phase.status === 'IN PROGRESS';
-            const isLocked = phase.status === 'LOCKED';
-
-            return (
-              <div key={phase.id} className="relative flex gap-6 z-10">
-                {/* Timeline Icon */}
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                  isCompleted 
-                    ? 'bg-[#0a0b1e] border-2 border-[#8c5bf5] shadow-[0_0_15px_rgba(140,91,245,0.2)]'
-                    : isInProgress
-                    ? 'bg-[#8c5bf5] shadow-[0_0_15px_rgba(140,91,245,0.6)]'
-                    : 'bg-[#0a0b1e] border-2 border-slate-700'
+      {/* Today's Tasks */}
+      {tasks.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Play size={16} className="text-[#8c5bf5]" /> Today's Tasks
+          </h3>
+          {tasks.map((task) => (
+            <div key={task._id} className={`flex items-center justify-between p-4 rounded-xl border ${
+              task.completed 
+                ? 'bg-white/5 border-white/5'
+                : 'bg-[#8c5bf5]/10 border-[#8c5bf5]/30 shadow-[0_4px_20px_rgba(140,91,245,0.1)]'
+            }`}>
+              <div className="flex items-center gap-4">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                  task.completed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-[#8c5bf5]/20 text-[#8c5bf5]'
                 }`}>
-                  {isCompleted ? <Check size={18} className="text-[#8c5bf5]" /> : 
-                   isInProgress ? <Play size={18} className="text-white ml-0.5" fill="currentColor" /> :
-                   <Lock size={16} className="text-slate-600" />}
+                  {task.completed ? <Check size={16} strokeWidth={3} /> : <MoreHorizontal size={18} />}
                 </div>
-                
-                <GlassCard className={`flex-1 p-6 !rounded-2xl border cursor-pointer transition-colors hover:bg-white/5 ${
-                  isLocked ? 'opacity-60 border-white/5' : 'border-white/5'
-                }`} onClick={() => setExpandedPhase(expandedPhase === phase.id ? null : phase.id)}>
-                  <div className="flex justify-between items-center">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <h3 className={`text-lg font-bold ${isLocked ? 'text-slate-400' : 'text-white'}`}>Phase {phase.id}: {phase.title}</h3>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider ${
-                          isCompleted ? 'bg-emerald-500/10 text-emerald-400' :
-                          isInProgress ? 'bg-[#8c5bf5]/20 text-[#8c5bf5]' :
-                          'bg-white/10 text-slate-400'
-                        }`}>{phase.status}</span>
-                      </div>
-                      <p className={`text-sm ${isLocked ? 'text-slate-500' : 'text-slate-400'}`}>{phase.description}</p>
-                    </div>
-                    {phase.tasks.length > 0 && (
-                      expandedPhase === phase.id ? <ChevronUp className="text-slate-500" /> : <ChevronDown className="text-slate-500" />
-                    )}
-                  </div>
-
-                  {/* Accordion Content for Tasks */}
-                  {phase.tasks.length > 0 && (
-                    <AnimatePresence>
-                      {expandedPhase === phase.id && (
-                        <motion.div 
-                          initial={{ height: 0, opacity: 0 }} 
-                          animate={{ height: 'auto', opacity: 1 }} 
-                          exit={{ height: 0, opacity: 0 }} 
-                          className="overflow-hidden space-y-3 mt-6 pt-6 border-t border-white/10"
-                        >
-                          {phase.tasks.map((task, taskIdx) => (
-                            <div 
-                              key={taskIdx}
-                              className={`flex items-center justify-between p-4 rounded-xl border ${
-                                task.status === 'completed'
-                                  ? 'bg-white/5 border-white/5'
-                                  : task.status === 'current'
-                                  ? 'bg-[#8c5bf5]/10 border-[#8c5bf5]/30 shadow-[0_4px_20px_rgba(140,91,245,0.1)]'
-                                  : 'bg-white/[0.02] border-white/5 opacity-60'
-                              }`}
-                            >
-                              <div className="flex items-center gap-4">
-                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                                  task.status === 'completed'
-                                    ? 'bg-emerald-500/20 text-emerald-400'
-                                    : task.status === 'current'
-                                    ? 'bg-[#8c5bf5]/20 text-[#8c5bf5]'
-                                    : 'bg-white/10 text-slate-500'
-                                }`}>
-                                  {task.status === 'completed' && <Check size={16} strokeWidth={3} />}
-                                  {task.status === 'current' && <MoreHorizontal size={18} />}
-                                  {task.status === 'locked' && <Lock size={14} />}
-                                </div>
-                                <div>
-                                  <p className="text-[10px] font-bold text-slate-500 tracking-wider">
-                                    {task.status === 'current' ? (
-                                      <>DAY {task.day} <span className="text-[#8c5bf5] ml-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#8c5bf5] animate-pulse"></span> CURRENT</span></>
-                                    ) : (
-                                      `DAY ${task.day}`
-                                    )}
-                                  </p>
-                                  <p className={`text-sm font-bold ${task.status === 'locked' ? 'text-slate-400' : 'text-white'}`}>{task.title}</p>
-                                </div>
-                              </div>
-                              <button className={`px-5 py-2 text-xs font-bold rounded-full transition-colors ${
-                                task.status === 'current'
-                                  ? 'bg-[#8c5bf5] hover:bg-[#7e4ee5] text-white shadow-lg'
-                                  : task.status === 'locked'
-                                  ? 'text-slate-600'
-                                  : 'text-slate-400'
-                              }`}>
-                                {task.action}
-                              </button>
-                            </div>
-                          ))}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  )}
-                </GlassCard>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 tracking-wider">
+                    DAY {task.dayNumber} {!task.completed && <span className="text-[#8c5bf5] ml-2">CURRENT</span>}
+                  </p>
+                  <p className={`text-sm font-bold ${task.completed ? 'text-slate-400' : 'text-white'}`}>{task.title}</p>
+                  {task.description && <p className="text-xs text-slate-500 mt-0.5">{task.description}</p>}
+                </div>
               </div>
-            );
-          })}
-
+              {task.estimatedMinutes && (
+                <span className="text-xs text-slate-500">{task.estimatedMinutes} min</span>
+              )}
+            </div>
+          ))}
         </div>
-      </div>
+      )}
+
+      {/* Roadmap Summary */}
+      <GlassCard className="p-6">
+        <div className="flex items-start gap-4">
+          <div className="bg-[#8c5bf5]/20 p-3 rounded-full text-[#8c5bf5]">
+            <Sparkles size={24} />
+          </div>
+          <div>
+            <h3 className="font-bold text-lg text-white mb-1">AI-Generated Learning Path</h3>
+            <p className="text-slate-400 text-sm leading-relaxed">
+              Your personalized {totalDays}-day roadmap for <span className="text-white font-semibold">{careerName}</span> has been generated. 
+              Complete daily tasks to progress through your career path. Check the "Today" tab for your current assignments.
+            </p>
+          </div>
+        </div>
+      </GlassCard>
     </div>
   );
 }

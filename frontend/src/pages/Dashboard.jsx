@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, Flame, CalendarDays, ArrowRight, Fingerprint, GraduationCap, Clock, Target, Activity, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { gamificationAPI } from '../services/api';
 import { GlassCard } from '../components/GlassCard';
 import { careerDnaAPI } from '../services/api';
 
@@ -9,6 +10,8 @@ export default function Dashboard({ setActiveTab }) {
   const [careerDNA, setCareerDNA] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showXpToast, setShowXpToast] = useState(false);
+  const [xpToastAmount, setXpToastAmount] = useState(0);
 
   // Fetch Career DNA data from API
   useEffect(() => {
@@ -17,49 +20,33 @@ export default function Dashboard({ setActiveTab }) {
         setLoading(true);
         const response = await careerDnaAPI.getCareerDNA();
         setCareerDNA(response.data);
+        // After loading career DNA, check daily XP toast condition
+        try {
+          const gamRes = await gamificationAPI.getStatus();
+          const currentXp = gamRes.data.xp || gamRes.data.totalXP || 0;
+
+          const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+          const lastToastDate = localStorage.getItem('lastXpToastDate');
+          const lastXpValue = parseInt(localStorage.getItem('lastXpValue') || '0', 10);
+
+          if (lastToastDate !== today) {
+            const delta = Math.max(0, currentXp - (isNaN(lastXpValue) ? 0 : lastXpValue));
+            if (delta > 0) {
+              setXpToastAmount(delta);
+              setShowXpToast(true);
+              // Auto-hide after 4s
+              setTimeout(() => setShowXpToast(false), 4000);
+            }
+            // record that we've shown (or checked) today and persist current xp
+            localStorage.setItem('lastXpToastDate', today);
+            localStorage.setItem('lastXpValue', String(currentXp));
+          }
+        } catch (e) {
+          // ignore gamification errors
+        }
       } catch (err) {
         setError('Failed to load career DNA data');
         console.error(err);
-        // Set fallback data for demo purposes
-        setCareerDNA({
-          userId: "demo_user",
-          context: {
-            educationLevel: "Undergraduate",
-            currentCourse: "Electronics and Telecommunications",
-            yearOfStudy: 2,
-            dailyStudyHours: 3,
-            timezone: "Asia/Kolkata"
-          },
-          interests: ["Software Engineer", "AI/ML Engineer"],
-          abilities: [
-            {
-              name: "python",
-              selfRating: 70,
-              validatedScore: 65,
-              finalScore: 67,
-              highestQuizLevelCleared: "medium"
-            },
-            {
-              name: "data structures",
-              selfRating: 60,
-              validatedScore: 55,
-              finalScore: 57,
-              highestQuizLevelCleared: "easy"
-            }
-          ],
-          learningProfile: {
-            averageQuizAccuracy: 72,
-            learningSpeedIndex: 0.8,
-            consistencyScore: 75
-          },
-          executionProfile: {
-            streak: 5,
-            longestStreak: 12,
-            xp: 450,
-            level: 3,
-            roadmapProgress: 38
-          }
-        });
       } finally {
         setLoading(false);
       }
@@ -91,6 +78,16 @@ export default function Dashboard({ setActiveTab }) {
 
   return (
     <div className="flex flex-col gap-6 pb-4 w-full">
+
+      {/* XP Toast (top-right) */}
+      {showXpToast && (
+        <div className="fixed top-6 right-6 z-50">
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="bg-gradient-to-r from-emerald-400 to-emerald-300 text-[#041014] px-5 py-3 rounded-full shadow-lg font-black flex items-center gap-3">
+            <div className="text-lg">+{xpToastAmount} XP</div>
+            <div className="text-xs text-slate-800 font-semibold">Daily Check-in</div>
+          </motion.div>
+        </div>
+      )}
       
       {/* Top Stats Row (Updated using DNA Data) */}
       <motion.section initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-2">
@@ -124,6 +121,22 @@ export default function Dashboard({ setActiveTab }) {
             </div>
             <div className="w-16 h-16 bg-gradient-to-tr from-orange-600/20 to-[#8c5bf5]/20 rounded-full flex items-center justify-center border border-orange-500/20">
               <CalendarDays size={28} className="text-orange-500" />
+            </div>
+          </GlassCard>
+        </motion.div>
+
+        {/* Validation Score Card */}
+        <motion.div variants={itemAnim}>
+          <GlassCard className="p-6 flex items-center justify-between h-full">
+            <div>
+              <p className="text-slate-400 text-sm font-medium mb-1">Validation Avg</p>
+              <h3 className="text-3xl font-black text-white flex items-center gap-2">
+                {careerDNA.learningProfile?.validation?.average ?? 0}%
+              </h3>
+              <p className="text-xs text-slate-400 mt-2 font-medium">Tests: {careerDNA.learningProfile?.validation?.count ?? 0}</p>
+            </div>
+            <div className="w-16 h-16 bg-gradient-to-tr from-purple-600/20 to-[#8c5bf5]/20 rounded-full flex items-center justify-center border border-purple-500/20">
+              <GraduationCap size={28} className="text-purple-400" />
             </div>
           </GlassCard>
         </motion.div>
@@ -175,7 +188,11 @@ export default function Dashboard({ setActiveTab }) {
                   <h4 className="font-bold text-slate-100">Academic Context</h4>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-sm flex justify-between"><span className="text-slate-400">Level:</span> <span className="font-semibold">{careerDNA.context.educationLevel}</span></p>
+                  <p className="text-sm flex justify-between"><span className="text-slate-400">Level:</span> <span className="font-semibold">{(function(){
+                    const map = { ug: 'Undergraduate', pg: 'Postgraduate', wp: 'Working Professional' };
+                    const val = careerDNA.context.educationLevel;
+                    return map[val] || (typeof val === 'string' ? (val.charAt(0).toUpperCase() + val.slice(1)) : val);
+                  })()}</span></p>
                   <p className="text-sm flex justify-between"><span className="text-slate-400">Course:</span> <span className="font-semibold text-right">{careerDNA.context.currentCourse}</span></p>
                   <p className="text-sm flex justify-between"><span className="text-slate-400">Year:</span> <span className="font-semibold">Year {careerDNA.context.yearOfStudy}</span></p>
                 </div>
@@ -205,49 +222,67 @@ export default function Dashboard({ setActiveTab }) {
 
           {/* Abilities Map */}
           <div className="grid grid-cols-1 gap-4">
-            {careerDNA.abilities.map((ability, idx) => (
-              <motion.div variants={itemAnim} key={idx}>
-                <GlassCard className="p-5 flex flex-col transition-all">
-                  <div className="flex justify-between items-center mb-4">
-                    <h4 className="font-black text-slate-100 uppercase tracking-widest">{ability.name}</h4>
-                    <span className="text-[10px] font-bold bg-[#8c5bf5]/20 text-[#8c5bf5] px-2 py-1 rounded uppercase">
-                      Cleared: {ability.highestQuizLevelCleared}
-                    </span>
-                  </div>
-                  
-                  {/* Progress Visualization */}
-                  <div className="space-y-3">
-                    {/* Final Score Bar */}
-                    <div className="relative pt-1">
-                      <div className="flex mb-2 items-center justify-between">
-                        <div>
-                          <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded text-white bg-white/10">
-                            Final Score
-                          </span>
+            {careerDNA.abilities.length === 0 ? (
+              <GlassCard className="p-6 text-center">
+                <p className="text-slate-400 text-sm">No validated abilities yet. Complete quizzes to see your skill scores here.</p>
+              </GlassCard>
+            ) : (
+              careerDNA.abilities.map((ability, idx) => {
+                const levelColors = {
+                  easy: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' },
+                  medium: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', border: 'border-yellow-500/20' },
+                  advanced: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20' },
+                };
+                const level = ability.highestQuizLevelCleared || 'none';
+                const lc = levelColors[level] || { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' };
+                const score = ability.finalScore ?? 0;
+                const barColor = score >= 70 ? 'bg-emerald-500' : score >= 40 ? 'bg-yellow-500' : 'bg-red-500';
+
+                return (
+                  <motion.div variants={itemAnim} key={idx}>
+                    <GlassCard className="p-5 flex flex-col transition-all hover:border-[#8c5bf5]/20">
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-[#8c5bf5]/10 rounded-lg flex items-center justify-center">
+                            <Zap size={16} className="text-[#8c5bf5]" />
+                          </div>
+                          <h4 className="font-bold text-slate-100 capitalize">{ability.name}</h4>
                         </div>
-                        <div className="text-right">
-                          <span className="text-xs font-semibold inline-block text-[#8c5bf5]">
-                            {ability.finalScore}%
-                          </span>
+                        <div className="flex items-center gap-2">
+                          {level !== 'none' && (
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${lc.bg} ${lc.text} ${lc.border} uppercase`}>
+                              {level}
+                            </span>
+                          )}
+                          <span className="text-lg font-black text-[#8c5bf5]">{score}%</span>
                         </div>
                       </div>
-                      <div className="overflow-hidden h-2 mb-4 text-xs flex rounded-full bg-white/10">
+                      
+                      {/* Score Bar */}
+                      <div className="overflow-hidden h-2 mb-3 rounded-full bg-white/5">
                         <motion.div 
-                          initial={{ width: 0 }} animate={{ width: `${ability.finalScore}%` }} transition={{ duration: 1, delay: 0.5 }}
-                          className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-[#8c5bf5]" 
+                          initial={{ width: 0 }} animate={{ width: `${score}%` }} transition={{ duration: 1, delay: 0.3 + idx * 0.1 }}
+                          className={`h-full rounded-full ${barColor}`}
                         />
                       </div>
-                    </div>
 
-                    {/* Stats Breakdown */}
-                    <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-600"></span> Self-Rated: {ability.selfRating}</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> AI Validated: {ability.validatedScore}</span>
-                    </div>
-                  </div>
-                </GlassCard>
-              </motion.div>
-            ))}
+                      {/* Score Breakdown */}
+                      <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-slate-500"></span> Self: {ability.selfRating}/5
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span> AI Score: {ability.validatedScore}%
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-[#8c5bf5]"></span> Final: {score}%
+                        </span>
+                      </div>
+                    </GlassCard>
+                  </motion.div>
+                );
+              })
+            )}
           </div>
 
         </div>
@@ -282,21 +317,24 @@ export default function Dashboard({ setActiveTab }) {
               </div>
 
               <div className="space-y-6 flex-1 mt-4">
-                {[
-                  { label: 'Phase 1: Foundations', progress: 100, color: 'bg-[#8c5bf5]', text: 'text-[#8c5bf5]', val: '100%' },
-                  { label: 'Phase 2: Core Skills', progress: 38, color: 'bg-[#8c5bf5]', text: 'text-[#8c5bf5]', val: '38%' },
-                  { label: 'Phase 3: Advanced', progress: 0, color: 'bg-white/10', text: 'text-slate-500', val: 'Locked', opacity: 'opacity-50' }
-                ].map((skill, i) => (
-                  <div key={i} className={skill.opacity || ''}>
-                    <div className="flex justify-between mb-2">
-                      <span className="text-xs font-bold text-white">{skill.label}</span>
-                      <span className={`text-xs font-bold ${skill.text}`}>{skill.val}</span>
-                    </div>
-                    <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
-                      <motion.div initial={{ width: 0 }} animate={{ width: `${skill.progress}%` }} transition={{ duration: 1, delay: 0.5 + (i * 0.2) }} className={`h-full rounded-full ${skill.color}`} />
-                    </div>
+                <div>
+                  <div className="flex justify-between mb-2">
+                    <span className="text-xs font-bold text-white">Roadmap Completion</span>
+                    <span className="text-xs font-bold text-[#8c5bf5]">{careerDNA.executionProfile.roadmapProgress}%</span>
                   </div>
-                ))}
+                  <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                    <motion.div initial={{ width: 0 }} animate={{ width: `${careerDNA.executionProfile.roadmapProgress}%` }} transition={{ duration: 1, delay: 0.7 }} className="h-full rounded-full bg-[#8c5bf5]" />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between mb-2">
+                    <span className="text-xs font-bold text-white">XP Progress</span>
+                    <span className="text-xs font-bold text-yellow-400">{careerDNA.executionProfile.xp} XP</span>
+                  </div>
+                  <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                    <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min((careerDNA.executionProfile.xp / 1000) * 100, 100)}%` }} transition={{ duration: 1, delay: 0.9 }} className="h-full rounded-full bg-yellow-400" />
+                  </div>
+                </div>
               </div>
 
               {/* 2️⃣ Add the onClick handler to change the tab */}

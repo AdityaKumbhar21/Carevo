@@ -3,10 +3,13 @@ const { protect } = require('../middlewares/authMiddleware');
 const {
   checkIn,
   getStatus,
+  getBadges,
 } = require('../controllers/gamificationController');
 
 const router = express.Router();
 router.post('/check-in', protect, checkIn);
 router.get('/status', protect, getStatus);
+router.get('/', protect, getStatus);
+router.get('/badges', protect, getBadges);
 
 module.exports = router;

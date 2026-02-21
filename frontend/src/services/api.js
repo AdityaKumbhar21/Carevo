@@ -1,31 +1,35 @@
 import axios from 'axios';
 
-// Create axios instance with default config
+
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001/api',
   headers: {
-    'Content-Type': 'application/json'
-  }
+    'Content-Type': 'application/json',
+  },
+  withCredentials: false,
 });
 
-// Add request interceptor to include auth token
+
+
 API.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('authToken');
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Add response interceptor for error handling
+
+
 API.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Clear auth token and redirect to login
       localStorage.removeItem('authToken');
       localStorage.removeItem('user');
       window.location.href = '/';
@@ -34,65 +38,134 @@ API.interceptors.response.use(
   }
 );
 
-// AUTH API CALLS
+
+
 export const authAPI = {
   register: (data) => API.post('/auth/register', data),
+
   login: (data) => API.post('/auth/login', data),
-  verifyEmail: (token) => API.get(`/auth/verify-email/${token}`),
-  forgotPassword: (email) => API.post('/auth/forgot-password', { email }),
-  resetPassword: (token, password) => API.post(`/auth/reset-password/${token}`, { password }),
-  getCurrentUser: () => API.get('/auth/me')
+
+  // verifyEmail removed — using OTP flow instead
+
+  forgotPassword: (email) =>
+    API.post('/auth/forgot-password', { email }),
+
+  resetPassword: (token, password) =>
+    API.post(`/auth/reset-password/${encodeURIComponent(token)}`, {
+      password,
+    }),
+
+  getCurrentUser: () => API.get('/auth/me'),
+
+  debugToken: (email) =>
+    API.get(`/auth/debug-token?email=${encodeURIComponent(email)}`),
+  sendOtp: (email) => API.post('/auth/send-otp', { email }),
+  verifyOtp: (email, otp) => API.post('/auth/verify-otp', { email, otp }),
+
+  proctoringViolation: () => API.post('/auth/proctoring-violation'),
 };
 
-// PROFILE API CALLS
+
+
 export const profileAPI = {
-  setupProfile: (data) => API.post('/user/profile/setup', data),
-  updateProfile: (data) => API.put('/user/profile/update', data),
-  getProfile: () => API.get('/user/profile')
+  setupProfile: (data) =>
+    API.post('/user/profile/setup', data),
+
+  updateProfile: (data) =>
+    API.put('/user/profile/update', data),
+
+  getProfile: () =>
+    API.get('/user/profile'),
 };
 
-// CAREER DNA API CALLS
+
+
 export const careerDnaAPI = {
-  getCareerDNA: () => API.get('/career-dna')
+  getCareerDNA: () => API.get('/career-dna'),
 };
 
-// CAREER API CALLS
+
+export const analyticsAPI = {
+  // Fetch analytics overview (backend currently exposes skill progress and probability endpoints).
+  // `career` is optional and should be the career name used in Skill entries.
+  getAnalytics: (career) => API.get(`/analytics/skills${career ? `?careerId=${encodeURIComponent(career)}` : ''}`),
+  // Accept a period string (e.g., '1M') and optional career name to scope analytics
+  getAnalyticsByPeriod: (period, career) =>
+    API.get(`/analytics/skills?period=${encodeURIComponent(period)}${career ? `&careerId=${encodeURIComponent(career)}` : ''}`),
+  // New overview endpoint returns aggregated metrics and heatmap
+  getOverview: (career) => API.get(`/analytics/overview${career ? `?careerId=${encodeURIComponent(career)}` : ''}`),
+};
+
+
+
 export const careerAPI = {
   getCareers: () => API.get('/careers'),
-  getCareerById: (id) => API.get(`/careers/${id}`)
+  getCareerById: (id) => API.get(`/careers/${id}`),
+  getRecommendations: () => API.get('/careers/recommendations'),
+  simulateCareer: (data) => API.post('/careers/simulate', data),
 };
 
-// ROADMAP API CALLS
+
+
 export const roadmapAPI = {
-  generateRoadmap: (data) => API.post('/roadmap/generate', data),
-  getRoadmap: () => API.get('/roadmap'),
-  updateRoadmapProgress: (data) => API.put('/roadmap/progress', data)
+  generateRoadmap: (data) =>
+    API.post('/roadmap/generate', data),
+
+  getRoadmap: (careerId) =>
+    API.get(`/roadmap${careerId ? `?careerId=${careerId}` : ''}`),
+
+  updateRoadmapProgress: (data) =>
+    API.put('/roadmap/progress', data),
 };
 
-// GAMIFICATION API CALLS
+
+export const taskAPI = {
+  getTodayTasks: () => API.get('/tasks/today'),
+  completeTask: (taskId) =>
+    API.post('/tasks/complete', { taskId }),
+  checkDailyCompletion: () =>
+    API.get('/tasks/check-completion'),
+};
+
+
 export const gamificationAPI = {
+  checkIn: () => API.post('/gamification/check-in'),
   getGamification: () => API.get('/gamification'),
-  addXP: (data) => API.post('/gamification/xp', data),
+  getStatus: () => API.get('/gamification/status'),
   getBadges: () => API.get('/gamification/badges'),
-  claimBadge: (badgeId) => API.post(`/gamification/badges/${badgeId}/claim`, {})
 };
 
-// ANALYTICS API CALLS
-export const analyticsAPI = {
-  getAnalytics: () => API.get('/analytics'),
-  getAnalyticsByPeriod: (period) => API.get(`/analytics?period=${period}`)
-};
 
-// QUIZ API CALLS
-export const quizAPI = {
-  getQuiz: () => API.get('/quiz'),
-  submitQuiz: (data) => API.post('/quiz/submit', data)
-};
 
-// BADGE API CALLS
 export const badgeAPI = {
-  getBadges: () => API.get('/badge'),
-  getUserBadges: () => API.get('/badge/user')
+  getUserBadges: () => API.get('/badges'),
+  getShareableBadge: (token) =>
+    API.get(`/badges/share/${encodeURIComponent(token)}`),
 };
+
+
+export const quizAPI = {
+  generateQuiz: (data) =>
+    API.post('/quiz/generate', data),
+
+  // New validation endpoints (backend updated)
+  generateValidation: (data) =>
+    API.post('/quiz/validation/generate', data),
+
+  getValidation: (params) =>
+    API.get(`/quiz/validation?career=${encodeURIComponent(params.career)}&skill=${encodeURIComponent(params.skill)}&level=${encodeURIComponent(params.level)}`),
+
+  submitQuiz: (data) =>
+    API.post('/quiz/submit', data),
+
+  getQuizHistory: () =>
+    API.get('/quiz/history'),
+};
+
+
+export const marketAPI = {
+  analyzeMarket: () => API.get('/market/analyze'),
+};
+
 
 export default API;

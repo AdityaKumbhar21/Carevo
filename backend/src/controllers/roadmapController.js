@@ -59,11 +59,12 @@ const generateRoadmap = async (req, res) => {
       };
     });
 
-    // 🔥 Call Gemini once
+    // 🔥 Call Gemini once (include resume text for personalized roadmap)
     const aiRoadmap = await generateRoadmapFromAI({
       careerName: career.name,
       dailyStudyHours: user.dailyStudyHours || 2,
       skillGaps,
+      resumeText: user.resumeText || '',
     });
 
     if (!aiRoadmap?.tasks?.length) {

@@ -1,13 +1,110 @@
-import React, { useState } from 'react';
-import { Lightbulb, Sparkles, Star, Code, Rocket, Brain, ArrowRight, Briefcase, TrendingUp, Radar, LineChart, X, Target, Calendar, Award } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Lightbulb, Sparkles, Star, Rocket, TrendingUp, X, Target, Calendar, Award, Briefcase, ExternalLink, Zap, Clock, BarChart3, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/GlassCard';
+import { careerAPI } from '../services/api';
 
 export default function CareerMatch() {
-  // State to handle which career modal is open
   const [selectedCareer, setSelectedCareer] = useState(null);
+  const [recommendations, setRecommendations] = useState([]);
+  const [simulation, setSimulation] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [simulating, setSimulating] = useState(false);
+  const [error, setError] = useState('');
+  const [allCareers, setAllCareers] = useState([]);
+
+  const loadingMessages = [
+    'Analyzing your unique skill DNA...',
+    'Cross-referencing 10,000+ career paths...',
+    'Consulting our AI career oracle...',
+    'Calculating your perfect career fit...',
+    'Mapping your strengths to opportunities...',
+    'Scanning the job market universe...',
+    'Running neural match algorithms...',
+    'Almost there... your future is loading!'
+  ];
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
+
+  useEffect(() => {
+    if (!loading) return;
+    const interval = setInterval(() => setLoadingMsgIdx(i => (i + 1) % loadingMessages.length), 2500);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const itemAnim = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.5 } } };
+
+  const colorPalette = ['#8c5bf5', '#eab308', '#f43f5e', '#06b6d4', '#10b981'];
+  const riskLabels = (score) => {
+    if (score >= 80) return { label: 'Low Risk', color: 'emerald' };
+    if (score >= 60) return { label: 'Medium Risk', color: 'yellow' };
+    return { label: 'High Risk', color: 'rose' };
+  };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [recRes, careersRes] = await Promise.all([
+          careerAPI.getRecommendations(),
+          careerAPI.getCareers()
+        ]);
+        
+        setAllCareers(careersRes.data || []);
+        
+        const recs = recRes.data?.recommendations || recRes.data || [];
+        setRecommendations(recs.slice(0, 5));
+      } catch (err) {
+        console.error('Failed to fetch recommendations:', err);
+        setError('Failed to load career recommendations.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const handleSimulate = async (rec) => {
+    const career = allCareers.find(c => c.name === rec.careerName);
+    if (!career) return;
+    
+    setSimulating(true);
+    try {
+      const res = await careerAPI.simulateCareer({ careerId: career._id });
+      setSimulation(res.data);
+      setSelectedCareer({ 
+        title: rec.careerName, 
+        match: `${rec.fitScore}%`, 
+        color: colorPalette[recommendations.indexOf(rec) % colorPalette.length],
+        data: res.data 
+      });
+    } catch (err) {
+      console.error('Simulation failed:', err);
+    } finally {
+      setSimulating(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center w-full h-full min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-[#8c5bf5]/20 border-t-[#8c5bf5] rounded-full animate-spin"></div>
+            <Sparkles size={20} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[#8c5bf5] animate-pulse" />
+          </div>
+          <motion.p
+            key={loadingMsgIdx}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="text-slate-400 text-sm font-medium text-center max-w-xs"
+          >
+            {loadingMessages[loadingMsgIdx]}
+          </motion.p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6 pb-4 max-w-7xl mx-auto w-full relative">
@@ -24,225 +121,282 @@ export default function CareerMatch() {
           <div className="space-y-1 relative z-10">
             <h3 className="font-bold text-lg text-white">AI Recommendation Engine</h3>
             <p className="text-slate-300 leading-relaxed text-sm">
-              Based on your recent quiz performance in <span className="text-[#8c5bf5] font-semibold">Python</span> and <span className="text-[#8c5bf5] font-semibold">Statistics</span>, your fit for Data Science has increased by <span className="inline-flex items-center text-emerald-400 font-bold">5% <TrendingUp size={14} className="ml-1"/></span>.
+              Career matches generated by AI based on your skills, quiz performance, and career DNA profile.
             </p>
           </div>
         </GlassCard>
       </motion.div>
 
-      {/* Top 3 Careers Section */}
+      {/* Career Matches */}
       <section className="space-y-6 mt-4">
         <h3 className="text-xl font-bold flex items-center gap-2 text-white">
           <Star size={20} className="text-[#8c5bf5] fill-[#8c5bf5]" /> Top Career Matches
         </h3>
         
+        {error && (
+          <GlassCard className="p-4 border border-red-500/30 bg-red-500/5">
+            <p className="text-red-400 text-sm">{error}</p>
+          </GlassCard>
+        )}
+
+        {recommendations.length === 0 && !error && (
+          <GlassCard className="p-8 text-center">
+            <p className="text-slate-400">No recommendations yet. Complete quizzes to improve matches.</p>
+          </GlassCard>
+        )}
+        
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Card 1: Data Scientist */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.5 }}>
-            <GlassCard className="p-6 relative group border-t-2 border-t-[#8c5bf5]/50 hover:border-t-[#8c5bf5] transition-all flex flex-col h-full">
-              <div className="flex justify-between items-start mb-6">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#8c5bf5] to-[#4f46e5] flex items-center justify-center text-white shadow-lg shadow-[#8c5bf5]/20">
-                  <Code size={28} />
-                </div>
-                <div className="text-right">
-                  <div className="text-3xl font-black text-[#8c5bf5]">92%</div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Fit Score</div>
-                </div>
-              </div>
-              <h4 className="text-xl font-bold mb-1 text-white">Data Scientist</h4>
-              <div className="flex items-center gap-2 mb-4">
-                <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold uppercase">Low Risk</span>
-                <span className="text-slate-500 text-xs font-medium">$120k - $180k</span>
-              </div>
-              <p className="text-slate-400 text-sm mb-8 leading-relaxed">Ideal path based on your strong analytical foundation and coding proficiency.</p>
-              
-              {/* TRIGGER MODAL HERE */}
-              <button 
-                onClick={() => setSelectedCareer({ title: 'Data Scientist', match: '92%', color: '#8c5bf5', time: '6-8 Months', salary: '$120k - $180k' })}
-                className="mt-auto w-full py-3 rounded-full bg-gradient-to-r from-[#8c5bf5] to-[#4f46e5] text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#8c5bf5]/30 hover:scale-[1.02] transition-all"
-              >
-                Simulate Future <Rocket size={16} />
-              </button>
-            </GlassCard>
-          </motion.div>
+          {recommendations.map((rec, index) => {
+            const color = colorPalette[index % colorPalette.length];
+            const risk = riskLabels(rec.fitScore);
+            const career = allCareers.find(c => c.name === rec.careerName);
+            const salary = career?.averageSalaryRange || {};
+            const salaryStr = salary.min && salary.max 
+              ? `$${(salary.min / 1000).toFixed(0)}k - $${(salary.max / 1000).toFixed(0)}k` 
+              : 'N/A';
 
-          {/* Card 2: AI/ML Engineer */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.5 }}>
-            <GlassCard className="p-6 flex flex-col h-full border-t-2 border-t-yellow-500/50 hover:border-t-yellow-500 transition-all">
-              <div className="flex justify-between items-start mb-6">
-                <div className="w-14 h-14 rounded-2xl bg-yellow-500/20 flex items-center justify-center text-yellow-500"><Brain size={28} /></div>
-                <div className="text-right">
-                  <div className="text-3xl font-black text-yellow-500">88%</div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Fit Score</div>
-                </div>
-              </div>
-              <h4 className="text-xl font-bold mb-1 text-white">AI/ML Engineer</h4>
-              <div className="flex items-center gap-2 mb-4">
-                <span className="px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-[10px] font-bold uppercase">Medium Risk</span>
-                <span className="text-slate-500 text-xs font-medium">$130k - $200k</span>
-              </div>
-              <p className="text-slate-400 text-sm mb-8 leading-relaxed">Requires scaling your knowledge in deep learning frameworks and MLOps.</p>
-              
-              {/* TRIGGER MODAL HERE */}
-              <button 
-                onClick={() => setSelectedCareer({ title: 'AI/ML Engineer', match: '88%', color: '#eab308', time: '10-12 Months', salary: '$130k - $200k' })}
-                className="mt-auto w-full py-3 rounded-full bg-[#1e1b2e] hover:bg-[#2a2640] border border-white/5 text-white text-sm font-bold flex items-center justify-center gap-2 transition-all"
-              >
-                View Path <ArrowRight size={16} />
-              </button>
-            </GlassCard>
-          </motion.div>
-
-          {/* Card 3: Product Manager */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.5 }}>
-            <GlassCard className="p-6 flex flex-col h-full border-t-2 border-t-rose-500/50 hover:border-t-rose-500 transition-all">
-              <div className="flex justify-between items-start mb-6">
-                <div className="w-14 h-14 rounded-2xl bg-rose-500/20 flex items-center justify-center text-rose-500"><Briefcase size={28} /></div>
-                <div className="text-right">
-                  <div className="text-3xl font-black text-rose-500">75%</div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Fit Score</div>
-                </div>
-              </div>
-              <h4 className="text-xl font-bold mb-1 text-white">Product Manager</h4>
-              <div className="flex items-center gap-2 mb-4">
-                <span className="px-3 py-1 rounded-full bg-rose-500/10 text-rose-500 text-[10px] font-bold uppercase">High Risk</span>
-                <span className="text-slate-500 text-xs font-medium">$100k - $160k</span>
-              </div>
-              <p className="text-slate-400 text-sm mb-8 leading-relaxed">Significant pivot required. Focus on stakeholder management and strategy skills.</p>
-              
-              {/* TRIGGER MODAL HERE */}
-              <button 
-                onClick={() => setSelectedCareer({ title: 'Product Manager', match: '75%', color: '#f43f5e', time: '14-16 Months', salary: '$100k - $160k' })}
-                className="mt-auto w-full py-3 rounded-full bg-[#1e1b2e] hover:bg-[#2a2640] border border-white/5 text-white text-sm font-bold flex items-center justify-center gap-2 transition-all"
-              >
-                View Path <ArrowRight size={16} />
-              </button>
-            </GlassCard>
-          </motion.div>
+            return (
+              <motion.div key={index} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * index, duration: 0.5 }}>
+                <GlassCard className="p-6 relative group flex flex-col h-full" style={{ borderTop: `2px solid ${color}50` }}>
+                  <div className="flex justify-between items-start mb-6">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-lg" style={{ background: `${color}30`, color }}>
+                      <Target size={28} />
+                    </div>
+                    <div className="text-right">
+                      <div className="text-3xl font-black" style={{ color }}>{rec.fitScore}%</div>
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Fit Score</div>
+                    </div>
+                  </div>
+                  <h4 className="text-xl font-bold mb-1 text-white">{rec.careerName}</h4>
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className={`px-3 py-1 rounded-full bg-${risk.color}-500/10 text-${risk.color}-500 text-[10px] font-bold uppercase`}>{risk.label}</span>
+                    <span className="text-slate-500 text-xs font-medium">{salaryStr}</span>
+                  </div>
+                  <p className="text-slate-400 text-sm mb-2 leading-relaxed">{rec.strengthReason}</p>
+                  {rec.riskReason && <p className="text-slate-500 text-xs mb-6 italic">{rec.riskReason}</p>}
+                  
+                  <button 
+                    onClick={() => handleSimulate(rec)}
+                    disabled={simulating}
+                    className="mt-auto w-full py-3 rounded-full text-white text-sm font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02]"
+                    style={{ background: index === 0 ? `linear-gradient(to right, ${color}, #4f46e5)` : 'rgba(30,27,46,1)', border: index === 0 ? 'none' : '1px solid rgba(255,255,255,0.05)' }}
+                  >
+                    {simulating ? 'Simulating...' : 'Simulate Future'} <Rocket size={16} />
+                  </button>
+                </GlassCard>
+              </motion.div>
+            );
+          })}
         </div>
       </section>
 
-      {/* Skill Gap Analysis Section */}
-      <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4, duration: 0.6 }} className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center mt-10">
-        <div className="space-y-6">
-          <h3 className="text-xl font-bold flex items-center gap-2 text-white">
-            <Radar size={24} className="text-[#8c5bf5]" /> Skill Gap Analysis
-          </h3>
-          <p className="text-slate-400 leading-relaxed text-sm">
-            Comparing your current expertise against the industry requirements for a <span className="text-white font-bold">Senior Data Scientist</span> role. The gaps highlighted in blue represent your immediate learning opportunities.
-          </p>
-          <div className="space-y-4 pt-2">
-            <div className="flex items-center gap-4">
-              <div className="w-4 h-4 rounded-full bg-gradient-to-r from-[#8c5bf5] to-[#4f46e5]"></div>
-              <span className="text-sm font-semibold text-slate-200">Your Current Skills</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="w-4 h-4 rounded-full bg-slate-700 border border-slate-500"></div>
-              <span className="text-sm font-semibold text-slate-200">Role Requirement</span>
-            </div>
-          </div>
-          <div className="pt-6 grid grid-cols-2 gap-4">
-            <GlassCard className="p-4 text-center">
-              <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Python Proficiency</div>
-              <div className="text-xl font-black text-white">Advanced</div>
-            </GlassCard>
-            <GlassCard className="p-4 text-center">
-              <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Statistics Mastery</div>
-              <div className="text-xl font-black text-white">Expert</div>
-            </GlassCard>
-          </div>
-        </div>
-        
-        {/* Radar Chart Visual */}
-        <div className="relative aspect-square flex items-center justify-center rounded-full border border-[#8c5bf5]/10" style={{ backgroundImage: 'radial-gradient(circle, rgba(140, 91, 245, 0.1) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
-          <div className="absolute inset-0 flex items-center justify-center opacity-20">
-            <div className="w-full h-full rounded-full border border-[#8c5bf5]/20 scale-75"></div>
-            <div className="absolute w-full h-full rounded-full border border-[#8c5bf5]/20 scale-50"></div>
-            <div className="absolute w-full h-full rounded-full border border-[#8c5bf5]/20 scale-[0.25]"></div>
-          </div>
-          
-          <span className="absolute top-4 font-bold text-[10px] uppercase tracking-widest text-slate-400">Python</span>
-          <span className="absolute right-4 font-bold text-[10px] uppercase tracking-widest text-slate-400">ML Ops</span>
-          <span className="absolute bottom-4 font-bold text-[10px] uppercase tracking-widest text-slate-400">Leadership</span>
-          <span className="absolute left-4 font-bold text-[10px] uppercase tracking-widest text-slate-400">Statistics</span>
-          
-          <motion.svg initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.8 }} className="w-64 h-64 drop-shadow-[0_0_15px_rgba(140,91,245,0.4)] z-10" viewBox="0 0 100 100">
-            <polygon fill="rgba(140, 91, 245, 0.4)" points="50,10 85,50 50,90 15,50" stroke="#8c5bf5" strokeWidth="1"></polygon>
-            <polygon fill="none" opacity="0.6" points="50,25 70,50 50,75 30,50" stroke="white" strokeDasharray="2" strokeWidth="0.5"></polygon>
-          </motion.svg>
-          
-          <div className="absolute flex flex-col items-center z-20">
-            <LineChart size={40} className="text-[#8c5bf5] opacity-80" />
-          </div>
-        </div>
-      </motion.div>
-
       {/* --- CAREER SIMULATION MODAL --- */}
       <AnimatePresence>
-        {selectedCareer && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0a0b1e]/80 backdrop-blur-md">
+        {selectedCareer && simulation && (() => {
+          const prob = simulation.probability ?? 0;
+          const circumference = 2 * Math.PI * 54;
+          const strokeDash = (prob / 100) * circumference;
+          const probColor = prob >= 70 ? '#10b981' : prob >= 40 ? '#eab308' : '#f43f5e';
+          const diffLabel = simulation.difficultyScore >= 70 ? 'Hard' : simulation.difficultyScore >= 40 ? 'Medium' : 'Easy';
+          const demandLabel = simulation.marketDemandScore >= 70 ? 'High' : simulation.marketDemandScore >= 40 ? 'Medium' : 'Low';
+          return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0a0b1e]/85 backdrop-blur-lg overflow-y-auto">
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              initial={{ opacity: 0, scale: 0.9, y: 30 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="w-full max-w-2xl"
+              exit={{ opacity: 0, scale: 0.9, y: 30 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="w-full max-w-3xl my-8"
             >
-              <GlassCard className="p-8 relative" style={{ borderTop: `4px solid ${selectedCareer.color}` }}>
-                {/* Close Button */}
-                <button 
-                  onClick={() => setSelectedCareer(null)}
-                  className="absolute top-4 right-4 text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors"
-                >
-                  <X size={20} />
-                </button>
-
-                <div className="mb-6">
-                  <div className="flex items-center gap-3 mb-2">
-                    <Target size={24} color={selectedCareer.color} />
-                    <h2 className="text-3xl font-black text-white">{selectedCareer.title}</h2>
+              <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#12101f]/95 backdrop-blur-xl shadow-[0_0_60px_rgba(140,91,245,0.15)]">
+                {/* Glowing top bar */}
+                <div className="h-1.5 w-full" style={{ background: `linear-gradient(to right, ${selectedCareer.color}, #4f46e5, ${selectedCareer.color})` }} />
+                
+                {/* Background glow */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[60%] h-40 rounded-full blur-[100px] opacity-20" style={{ backgroundColor: selectedCareer.color }} />
+                
+                <div className="p-8 relative z-10">
+                  {/* Header */}
+                  <div className="flex justify-between items-start mb-8">
+                    <div>
+                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-2" style={{ color: selectedCareer.color }}>
+                        <Zap size={14} /> Career Simulation Engine
+                      </div>
+                      <h2 className="text-3xl font-black text-white">{selectedCareer.title}</h2>
+                      <p className="text-slate-400 text-sm mt-1">AI-powered path simulation based on your Career DNA</p>
+                    </div>
+                    <button 
+                      onClick={() => { setSelectedCareer(null); setSimulation(null); }}
+                      className="text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 p-2.5 rounded-full transition-all hover:rotate-90 duration-300"
+                    >
+                      <X size={18} />
+                    </button>
                   </div>
-                  <p className="text-slate-400">Path Simulation based on your current Career DNA.</p>
+
+                  {/* Probability Ring + Key Stats */}
+                  <div className="flex flex-col md:flex-row items-center gap-8 mb-8">
+                    {/* Probability Ring */}
+                    <div className="relative flex-shrink-0">
+                      <svg width="140" height="140" className="transform -rotate-90">
+                        <circle cx="70" cy="70" r="54" stroke="rgba(255,255,255,0.05)" strokeWidth="10" fill="none" />
+                        <motion.circle
+                          cx="70" cy="70" r="54"
+                          stroke={probColor}
+                          strokeWidth="10"
+                          fill="none"
+                          strokeLinecap="round"
+                          strokeDasharray={circumference}
+                          initial={{ strokeDashoffset: circumference }}
+                          animate={{ strokeDashoffset: circumference - strokeDash }}
+                          transition={{ duration: 1.5, ease: 'easeOut' }}
+                          style={{ filter: `drop-shadow(0 0 8px ${probColor}60)` }}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-3xl font-black text-white">{prob}%</span>
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Success</span>
+                      </div>
+                    </div>
+
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-2 gap-3 flex-1 w-full">
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                        className="p-4 bg-gradient-to-br from-white/[0.06] to-transparent border border-white/10 rounded-2xl">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Clock size={14} style={{ color: selectedCareer.color }} />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Est. Timeline</span>
+                        </div>
+                        <p className="text-2xl font-black text-white">{simulation.totalDays ?? 'N/A'} <span className="text-sm font-medium text-slate-400">days</span></p>
+                      </motion.div>
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+                        className="p-4 bg-gradient-to-br from-white/[0.06] to-transparent border border-white/10 rounded-2xl">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Award size={14} style={{ color: selectedCareer.color }} />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Study Hours</span>
+                        </div>
+                        <p className="text-2xl font-black text-white">{simulation.totalHours ?? 'N/A'}<span className="text-sm font-medium text-slate-400">h</span></p>
+                      </motion.div>
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+                        className="p-4 bg-gradient-to-br from-emerald-500/[0.06] to-transparent border border-emerald-500/10 rounded-2xl">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Briefcase size={14} className="text-emerald-400" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Job Openings</span>
+                        </div>
+                        <p className="text-2xl font-black text-emerald-400">{(simulation.totalJobs ?? 0).toLocaleString()}</p>
+                      </motion.div>
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+                        className="p-4 bg-gradient-to-br from-white/[0.06] to-transparent border border-white/10 rounded-2xl">
+                        <div className="flex items-center gap-2 mb-2">
+                          <BarChart3 size={14} style={{ color: selectedCareer.color }} />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Difficulty</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-2xl font-black text-white">{simulation.difficultyScore ?? 'N/A'}</p>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${simulation.difficultyScore >= 70 ? 'bg-red-500/10 text-red-400' : simulation.difficultyScore >= 40 ? 'bg-yellow-500/10 text-yellow-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{diffLabel}</span>
+                        </div>
+                      </motion.div>
+                    </div>
+                  </div>
+
+                  {/* Market Demand + Quick Insights */}
+                  <div className="flex items-center gap-3 mb-6 flex-wrap">
+                    <span className={`text-[10px] font-bold px-3 py-1.5 rounded-full border ${simulation.marketDemandScore >= 70 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : simulation.marketDemandScore >= 40 ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+                      {demandLabel} Market Demand
+                    </span>
+                    <span className="text-[10px] font-bold px-3 py-1.5 rounded-full border border-white/10 bg-white/5 text-slate-300">
+                      {simulation.gaps?.length || 0} Skills to Close
+                    </span>
+                    {simulation.totalDays && simulation.totalDays <= 90 && (
+                      <span className="text-[10px] font-bold px-3 py-1.5 rounded-full border border-[#8c5bf5]/20 bg-[#8c5bf5]/10 text-[#8c5bf5]">
+                        Fast Track Available
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Skill Gap Bars */}
+                  {simulation.gaps && simulation.gaps.length > 0 && (
+                    <div className="mb-6">
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 mb-4">
+                        <Target size={14} style={{ color: selectedCareer.color }} /> Skill Gap Analysis
+                      </h4>
+                      <div className="space-y-3">
+                        {simulation.gaps.map((gap, i) => {
+                          const pct = gap.requiredLevel ? Math.min(100, ((gap.userLevel || 0) / gap.requiredLevel) * 100) : 0;
+                          const gapColor = pct >= 80 ? '#10b981' : pct >= 50 ? '#eab308' : '#f43f5e';
+                          return (
+                            <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 * i }}
+                              className="p-3 bg-white/[0.03] border border-white/5 rounded-xl">
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm text-white font-semibold">{gap.skill}</span>
+                                <div className="flex items-center gap-3 text-xs">
+                                  <span className="text-slate-400">{Math.round(gap.userLevel || 0)} <span className="text-slate-600">/ {gap.requiredLevel}</span></span>
+                                  <span className="font-bold" style={{ color: gapColor }}>{Math.round(pct)}%</span>
+                                </div>
+                              </div>
+                              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                <motion.div
+                                  className="h-full rounded-full"
+                                  style={{ backgroundColor: gapColor }}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${pct}%` }}
+                                  transition={{ duration: 0.8, delay: 0.1 * i }}
+                                />
+                              </div>
+                              {gap.estimatedHours > 0 && (
+                                <p className="text-[10px] text-slate-500 mt-1">{gap.estimatedHours}h estimated to close</p>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sample Job Listings */}
+                  {simulation.sampleJobs && simulation.sampleJobs.length > 0 && (
+                    <div className="mb-6">
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 mb-4">
+                        <Briefcase size={14} className="text-emerald-400" /> Live Job Openings
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {simulation.sampleJobs.slice(0, 3).map((job, i) => (
+                          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * i }}
+                            className="p-4 bg-white/[0.03] border border-white/5 rounded-xl hover:border-emerald-500/20 transition-all group">
+                            <p className="text-sm text-white font-semibold truncate mb-1">{job.title}</p>
+                            <p className="text-[10px] text-slate-400 truncate mb-3">{job.company}</p>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-slate-500 truncate">{job.location}</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {job.salary && <span className="text-[10px] text-emerald-400 font-bold">{job.salary}</span>}
+                                {job.applyLink && (
+                                  <a href={job.applyLink} target="_blank" rel="noopener noreferrer" className="text-[#8c5bf5] hover:text-white transition-colors">
+                                    <ExternalLink size={12} />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => { setSelectedCareer(null); setSimulation(null); }}
+                      className="flex-1 py-4 text-white font-bold rounded-2xl shadow-lg transition-all hover:brightness-110 flex items-center justify-center gap-2"
+                      style={{ background: `linear-gradient(135deg, ${selectedCareer.color}, #4f46e5)` }}
+                    >
+                      Close Simulation
+                    </button>
+                  </div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div className="p-4 bg-white/5 border border-white/10 rounded-2xl">
-                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider flex items-center gap-2 mb-1">
-                      <TrendingUp size={14} color={selectedCareer.color} /> Match Score
-                    </p>
-                    <p className="text-2xl font-black" style={{ color: selectedCareer.color }}>{selectedCareer.match}</p>
-                  </div>
-                  <div className="p-4 bg-white/5 border border-white/10 rounded-2xl">
-                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider flex items-center gap-2 mb-1">
-                      <Calendar size={14} color={selectedCareer.color} /> Est. Time
-                    </p>
-                    <p className="text-2xl font-black text-white">{selectedCareer.time}</p>
-                  </div>
-                  <div className="p-4 bg-white/5 border border-white/10 rounded-2xl col-span-2">
-                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider flex items-center gap-2 mb-1">
-                      <Award size={14} color={selectedCareer.color} /> Projected Salary Curve
-                    </p>
-                    <p className="text-2xl font-black text-white">{selectedCareer.salary}</p>
-                  </div>
-                </div>
-
-                <div className="bg-[#8c5bf5]/10 border border-[#8c5bf5]/20 rounded-xl p-4 mb-8">
-                  <p className="text-sm text-slate-300">
-                    <span className="font-bold text-[#8c5bf5]">AI Note:</span> To reach this role, you need to focus heavily on <strong>System Design</strong> and <strong>Advanced Analytics</strong> over the next 3 months.
-                  </p>
-                </div>
-
-                <button 
-                  onClick={() => setSelectedCareer(null)}
-                  className="w-full py-4 text-white font-bold rounded-xl shadow-lg transition-all hover:brightness-110"
-                  style={{ backgroundColor: selectedCareer.color }}
-                >
-                  Set as Target Goal & Update Roadmap
-                </button>
-              </GlassCard>
+              </div>
             </motion.div>
           </div>
-        )}
+          );
+        })()}
       </AnimatePresence>
 
     </div>

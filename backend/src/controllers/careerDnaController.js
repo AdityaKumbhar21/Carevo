@@ -1,4 +1,4 @@
-const { generateCareerDNA } = require('../services/careerDNAService');
+const { generateCareerDNA } = require('../services/careerDnaService');
 
 const getCareerDNA = async (req, res) => {
   try {

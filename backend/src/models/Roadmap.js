@@ -39,7 +39,7 @@ const RoadmapSchema = new mongoose.Schema(
 
     aiModelUsed: {
       type: String,
-      default: 'gemini-1.5-pro',
+      default: 'gemini-2.5-flash',
     },
   },
   { timestamps: true }

@@ -1,9 +1,18 @@
 const express = require('express');
 const { protect } = require('../middlewares/authMiddleware');
-const { generateQuiz, submitQuiz } = require('../controllers/quizController');
+
+const {
+  generateValidationQuiz,
+  getValidationQuiz,
+  submitQuiz,
+} = require('../controllers/quizController');
 
 const router = express.Router();
-router.post('/generate', protect, generateQuiz);
+
+router.post('/validation/generate', protect, generateValidationQuiz);
+
+router.get('/validation', protect, getValidationQuiz);
+
 router.post('/submit', protect, submitQuiz);
 
 module.exports = router;

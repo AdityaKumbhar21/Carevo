@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Flame, Medal, GraduationCap, CalendarDays, BadgeCheck, Lock, Trophy, Sparkles } from 'lucide-react';
+import { Flame, Medal, GraduationCap, CalendarDays, BadgeCheck, Lock, Trophy, Sparkles, Share2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { GlassCard } from '../components/GlassCard';
 import { gamificationAPI } from '../services/api';
@@ -9,6 +9,22 @@ export default function Gamification() {
   const [badges, setBadges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+
+  const milestoneMessages = [
+    'Loading your achievement vault...',
+    'Counting your XP crystals...',
+    'Polishing your badges...',
+    'Syncing your streak data...',
+    'Preparing your milestone timeline...'
+  ];
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
+
+  useEffect(() => {
+    if (!loading) return;
+    const interval = setInterval(() => setLoadingMsgIdx(i => (i + 1) % milestoneMessages.length), 2000);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const itemAnim = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.5 } } };
 
@@ -24,27 +40,42 @@ export default function Gamification() {
         
         setGamificationData(gamResponse.data);
         setBadges(badgesResponse.data.badges || []);
+        // Automatic daily check-in: if lastCheckIn is not today, attempt check-in once
+        try {
+          const last = gamResponse.data?.lastCheckIn;
+          const lastDate = last ? new Date(last).toDateString() : null;
+          const today = new Date().toDateString();
+          if (lastDate !== today) {
+            const checkRes = await gamificationAPI.checkIn();
+            setGamificationData((prev) => ({
+              ...prev,
+              streak: checkRes.data.streak,
+              coins: checkRes.data.coins,
+              xp: checkRes.data.xp,
+              totalXP: checkRes.data.totalXP ?? checkRes.data.xp ?? prev.totalXP,
+              level: checkRes.data.level,
+              lastCheckIn: new Date().toISOString(),
+              currentDay: checkRes.data.currentDay ?? prev.currentDay,
+              currentDayXP: checkRes.data.currentDayXP ?? prev.currentDayXP,
+              nextDayXPrequirement: checkRes.data.nextDayXPrequirement ?? prev.nextDayXPrequirement,
+              xpToNextDay: checkRes.data.xpToNextDay ?? prev.xpToNextDay,
+            }));
+            // re-fetch badges since check-in may have awarded one
+            try {
+              const freshBadges = await gamificationAPI.getBadges();
+              setBadges(freshBadges.data.badges || []);
+            } catch (e) {}
+            // notify app about xp change
+            window.dispatchEvent(new CustomEvent('xpUpdated', { detail: { xp: checkRes.data.totalXP || checkRes.data.xp || 0 } }));
+            window.dispatchEvent(new Event('contributionUpdated'));
+          }
+        } catch (ciErr) {
+          // fail silently — don't block UI
+          console.warn('Auto check-in failed', ciErr);
+        }
       } catch (err) {
         setError('Failed to load gamification data');
         console.error(err);
-        // Set fallback data
-        setGamificationData({
-          totalXP: 450,
-          dailyXP: 50,
-          currentDay: 14,
-          xpToNextDay: 50,
-          currentDayXP: 150,
-          nextDayXPrequirement: 200,
-          streak: 15,
-          longestStreak: 20,
-          roadmapProgress: 38
-        });
-        setBadges([
-          { id: 1, name: 'First Quiz', category: 'Starter Explorer', icon: 'GraduationCap', color: 'orange', unlocked: true },
-          { id: 2, name: '7 Day Streak', category: 'Weekly Warrior', icon: 'CalendarDays', color: 'slate', unlocked: true },
-          { id: 3, name: 'Skill Master', category: 'Epic Achievement', icon: 'BadgeCheck', color: 'purple', unlocked: true, epic: true },
-          { id: 4, name: 'Pathfinder', category: 'Complete 5 Paths', icon: 'Lock', color: 'gray', unlocked: false }
-        ]);
       } finally {
         setLoading(false);
       }
@@ -55,10 +86,17 @@ export default function Gamification() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center w-full h-full">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-[#8c5bf5]/20 border-t-[#8c5bf5] rounded-full animate-spin"></div>
-          <p className="text-slate-400 text-sm">Loading gamification data...</p>
+      <div className="flex items-center justify-center w-full h-full min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-[#8c5bf5]/20 border-t-[#8c5bf5] rounded-full animate-spin"></div>
+          <motion.p
+            key={loadingMsgIdx}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-slate-400 text-sm font-medium text-center"
+          >
+            {milestoneMessages[loadingMsgIdx]}
+          </motion.p>
         </div>
       </div>
     );
@@ -93,6 +131,7 @@ export default function Gamification() {
                 <p className="text-2xl font-black text-[#8c5bf5]">{gamificationData.currentDayXP} <span className="text-slate-400 text-sm font-medium">/ {gamificationData.nextDayXPrequirement} XP</span></p>
                 <p className="text-xs text-slate-500 font-bold mt-1">{gamificationData.xpToNextDay} XP to unlock Day {gamificationData.currentDay + 1}</p>
               </div>
+
             </div>
             <div className="relative h-4 w-full bg-white/5 rounded-full overflow-hidden z-10">
               <motion.div 
@@ -146,7 +185,9 @@ export default function Gamification() {
               {Array.from({ length: gamificationData.streak }).map((_, i) => <div key={i} className="h-1.5 rounded-full bg-[#FF4D00]"></div>)}
               {Array.from({ length: Math.max(0, 7 - (gamificationData.streak % 7)) }).map((_, i) => <div key={i + gamificationData.streak} className="h-1.5 rounded-full bg-slate-800"></div>)}
             </div>
-            <p className="text-[10px] text-slate-500 mt-3 italic font-medium">Keep it up! {gamificationData.longestStreak - gamificationData.streak} days to reach {gamificationData.longestStreak} 🔥</p>
+            {gamificationData.longestStreak > gamificationData.streak && (
+              <p className="text-[10px] text-slate-500 mt-3 italic font-medium">Keep it up! {gamificationData.longestStreak - gamificationData.streak} days to reach your best of {gamificationData.longestStreak} 🔥</p>
+            )}
           </GlassCard>
         </motion.div>
 
@@ -169,21 +210,47 @@ export default function Gamification() {
               
               const colors = colorMap[badge.color] || colorMap['slate'];
               const isLocked = !badge.unlocked;
+
+              const IconComponent = {
+                GraduationCap, CalendarDays, BadgeCheck, Lock, Trophy, Flame, Medal
+              }[badge.icon] || BadgeCheck;
+
+              const handleShare = async (e) => {
+                e.stopPropagation();
+                if (!badge.shareToken) return;
+                const shareUrl = `${window.location.origin}/badge/${badge.shareToken}`;
+                const shareText = `I just earned the "${badge.name}" badge on CarEvo! 🏆`;
+                if (navigator.share) {
+                  try {
+                    await navigator.share({ title: `CarEvo Badge: ${badge.name}`, text: shareText, url: shareUrl });
+                  } catch (err) {}
+                } else {
+                  await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+                  alert('Badge link copied to clipboard!');
+                }
+              };
               
               return (
                 <GlassCard 
                   key={badge.id}
-                  className={`p-6 flex flex-col items-center text-center border transition-all group cursor-pointer !rounded-2xl ${
+                  className={`p-6 flex flex-col items-center text-center border transition-all group cursor-pointer relative !rounded-2xl ${
                     isLocked 
                       ? 'opacity-40 grayscale'
                       : `${colors.border} hover:border-${badge.color}-500/50 ${colors.hover}`
                   } ${badge.epic && !isLocked ? `bg-[#8c5bf5]/5 shadow-[0_0_15px_rgba(140,91,245,0.15)] ${colors.border}` : colors.bg}`}
                 >
+                  {/* Share button for unlocked badges */}
+                  {!isLocked && badge.shareToken && (
+                    <button
+                      onClick={handleShare}
+                      className="absolute top-2 right-2 p-1.5 rounded-full bg-white/5 hover:bg-[#8c5bf5]/20 text-slate-400 hover:text-[#8c5bf5] transition-all opacity-0 group-hover:opacity-100"
+                      title="Share badge"
+                    >
+                      <Share2 size={14} />
+                    </button>
+                  )}
                   <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 border group-hover:scale-110 transition-transform ${colors.bg} ${colors.border} ${!isLocked && badge.epic ? `shadow-[0_0_15px_rgba(140,91,245,0.4)]` : ''}`}>
-                    {badge.icon === 'GraduationCap' && <GraduationCap size={32} className={colors.icon} />}
-                    {badge.icon === 'CalendarDays' && <CalendarDays size={32} className={colors.icon} />}
-                    {badge.icon === 'BadgeCheck' && <BadgeCheck size={32} className={colors.icon} />}
-                    {badge.icon === 'Lock' && <Lock size={32} className={colors.icon} />}
+                    <IconComponent size={32} className={colors.icon} />
                   </div>
                   <p className="text-sm font-bold text-white">{badge.name}</p>
                   <p className={`text-[10px] mt-1 font-medium ${isLocked ? 'text-slate-500' : badge.epic ? 'text-[#8c5bf5] font-bold' : 'text-slate-500'}`}>

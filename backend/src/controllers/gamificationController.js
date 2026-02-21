@@ -78,12 +78,24 @@ const checkIn = async (req, res) => {
     
     await awardBadgeIfEligible(userId);
 
+    // Compute derived fields for frontend
+    const totalXP = gam.xp || 0;
+    const currentDay = Math.floor(totalXP / 200) + 1;
+    const currentDayXP = totalXP % 200;
+    const nextDayXPrequirement = 200;
+    const xpToNextDay = nextDayXPrequirement - currentDayXP;
+
     res.json({
       msg: 'Check-in successful',
       streak: gam.streak,
       coins: gam.coins,
       xp: gam.xp,
+      totalXP,
       level: gam.level,
+      currentDay,
+      currentDayXP,
+      nextDayXPrequirement,
+      xpToNextDay,
     });
 
   } catch (err) {
@@ -103,23 +115,50 @@ const getStatus = async (req, res) => {
         longestStreak: 0,
         coins: 0,
         xp: 0,
+        totalXP: 0,
         level: 1,
         totalCheckIns: 0,
         lastCheckIn: null,
+        currentDay: 1,
+        currentDayXP: 0,
+        nextDayXPrequirement: 200,
+        xpToNextDay: 200,
+        dailyXP: 0,
       });
     }
+
+    const totalXP = gam.xp || 0;
+    const currentDay = Math.floor(totalXP / 200) + 1;
+    const currentDayXP = totalXP % 200;
+    const nextDayXPrequirement = 200;
+    const xpToNextDay = nextDayXPrequirement - currentDayXP;
+
+    // Compute today's XP earned (approximate from tasks completed today + check-in)
+    const Task = require('../models/Task');
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayTasks = await Task.countDocuments({ user: req.user._id, completedAt: { $gte: todayStart } });
+    const checkedInToday = gam.lastCheckIn && new Date(gam.lastCheckIn).toDateString() === new Date().toDateString();
+    const dailyXP = (todayTasks * 20) + (checkedInToday ? 50 : 0);
 
     res.json({
       streak: gam.streak,
       longestStreak: gam.longestStreak,
       coins: gam.coins,
-      xp: gam.xp,
+      xp: totalXP,
+      totalXP,
       level: gam.level,
       totalCheckIns: gam.totalCheckIns,
       lastCheckIn: gam.lastCheckIn,
+      currentDay,
+      currentDayXP,
+      nextDayXPrequirement,
+      xpToNextDay,
+      dailyXP,
     });
 
   } catch (err) {
+    console.error(err);
     res.status(500).json({ msg: 'Failed to fetch status' });
   }
 };
@@ -155,8 +194,50 @@ const rewardForTaskCompletion = async (
   await awardBadgeIfEligible(userId);
 };
 
+
+const getBadges = async (req, res) => {
+  try {
+    const UserBadge = require('../models/UserBadge');
+    const Badge = require('../models/Badge');
+
+    const userBadges = await UserBadge.find({ user: req.user._id }).populate('badge');
+    const allBadges = await Badge.find();
+
+    // Icon name mapping: normalize any emoji/legacy icons to lucide icon names
+    const iconNormalize = (raw) => {
+      if (!raw) return 'BadgeCheck';
+      // Already a lucide name
+      if (['GraduationCap', 'CalendarDays', 'BadgeCheck', 'Lock', 'Trophy', 'Flame', 'Star', 'Medal'].includes(raw)) return raw;
+      // Emoji fallbacks
+      const emojiMap = { '🔥': 'CalendarDays', '🏆': 'GraduationCap', '✅': 'BadgeCheck', '⭐': 'Star', '🎖️': 'Medal' };
+      return emojiMap[raw] || 'BadgeCheck';
+    };
+
+    const badges = allBadges.map((badge) => {
+      const earned = userBadges.find(ub => ub.badge._id.toString() === badge._id.toString());
+      return {
+        id: badge._id,
+        name: badge.name,
+        category: badge.description || badge.type,
+        icon: iconNormalize(badge.icon),
+        color: earned ? 'purple' : 'gray',
+        unlocked: !!earned,
+        awardedAt: earned?.awardedAt || null,
+        shareToken: earned?.shareToken || null,
+      };
+    });
+
+    res.json({ badges });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Failed to fetch badges' });
+  }
+};
+
+
 module.exports = {
   checkIn,
   getStatus,
+  getBadges,
   rewardForTaskCompletion,
 };

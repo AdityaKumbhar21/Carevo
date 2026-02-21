@@ -15,7 +15,18 @@ const awardBadgeIfEligible = async (userId) => {
     let eligible = false;
 
     if (badge.type === 'streak') {
+      // For "First Check-In" (value=1), also check totalCheckIns
       if (gam.streak >= badge.criteria.value) {
+        eligible = true;
+      }
+      // Fallback: if streak reset but user has enough total check-ins
+      if (badge.criteria.value === 1 && gam.totalCheckIns >= 1) {
+        eligible = true;
+      }
+    }
+
+    if (badge.type === 'checkin' || badge.type === 'milestone') {
+      if (gam.totalCheckIns >= (badge.criteria.value || 1)) {
         eligible = true;
       }
     }

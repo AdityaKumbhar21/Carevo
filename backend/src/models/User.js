@@ -7,17 +7,25 @@ const UserSchema = new mongoose.Schema({
   password: { type: String, required: true, select: false },
 
   isVerified: { type: Boolean, default: false },
-  verificationToken: String,
-  verificationTokenExpiry: Date,
-
   resetToken: String,
   resetTokenExpiry: Date,
+  otpHash: String,
+  otpExpiry: Date,
 
   // Academic Profile
   educationLevel: String,
   currentCourse: String,
   yearOfStudy: String,
+  dailyStudyHours: Number,
   dailyAvailableHours: Number,
+  careerInterests: [String],
+  hasOnboarded: { type: Boolean, default: false },
+  hasCompletedQuiz: { type: Boolean, default: false },
+
+  // Resume
+  resumeText: { type: String, default: '' },
+  resumeSkills: { type: [String], default: [] },
+  resumeExperience: { type: [String], default: [] },
 
   // Gamification
   totalCoins: { type: Number, default: 0 },
@@ -35,19 +43,20 @@ const UserSchema = new mongoose.Schema({
     consistencyIndex: Number
   }
 
+  ,
+  // Per-career fit scores computed from validations
+  careerFitScores: { type: Object, default: {} },
+  // Raw skill ratings provided by user during onboarding
+  skillRatings: { type: Object, default: {} },
+
 }, { timestamps: true });
 
 // Hash password before saving
-UserSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (err) {
-    next(err);
-  }
+UserSchema.pre('save', async function() {
+  if (!this.isModified('password')) return;
+
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
 });
 
 // Method to compare passwords

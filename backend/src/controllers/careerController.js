@@ -3,7 +3,9 @@
 const Career = require('../models/Career');
 const User = require('../models/User');
 const Skill = require('../models/Skill');
+const CareerMatch = require('../models/CareerMatch');
 const { generateRecommendations } = require('../services/geminiService');
+const { searchJobs } = require('../services/jobsService');
 
 
 const getCareers = async (req, res) => {
@@ -20,17 +22,33 @@ const getCareers = async (req, res) => {
 const getRecommendations = async (req, res) => {
   try {
     const user = req.user; // from protect middleware
+    const userId = user._id;
 
-    const skillDoc = await Skill.find({ user: user._id });
+    const skillDoc = await Skill.find({ user: userId });
     const careers = await Career.find();
 
     if (!careers.length) {
       return res.status(404).json({ msg: 'No careers available' });
     }
 
+    // Check if we have cached recommendations that are still valid
+    const cached = await CareerMatch.findOne({ user: userId });
+    const userInterests = user.careerInterests || [];
+    const skillCount = skillDoc.reduce((sum, d) => sum + (d.skills?.length || 0), 0);
+    const hasResume = !!(user.resumeText);
+
+    if (cached && cached.recommendations.length > 0) {
+      // Return cached if interests, skill count, and resume status haven't changed
+      const sameInterests = JSON.stringify(cached.generatedFrom?.careerInterests || []) === JSON.stringify(userInterests);
+      const sameSkills = (cached.generatedFrom?.skillCount || 0) === skillCount;
+      const sameResume = (cached.generatedFrom?.hasResume || false) === hasResume;
+      if (sameInterests && sameSkills && sameResume) {
+        return res.json({ recommendations: cached.recommendations });
+      }
+    }
+
     // Flatten user skills across careers
     const abilities = [];
-
     skillDoc.forEach(doc => {
       doc.skills.forEach(s => {
         abilities.push({
@@ -41,29 +59,36 @@ const getRecommendations = async (req, res) => {
     });
 
     const userDNA = {
-      interests: user.careerInterests || [],
+      interests: userInterests,
       abilities,
       dailyStudyHours: user.dailyStudyHours || 2,
+      resumeText: user.resumeText || '',
     };
 
-    const rawRecommendations = await generateRecommendations(
-      userDNA,
-      careers
-    );
+    const rawRecommendations = await generateRecommendations(userDNA, careers);
 
     let parsed;
-
     try {
       parsed = typeof rawRecommendations === 'string'
         ? JSON.parse(rawRecommendations)
         : rawRecommendations;
     } catch (e) {
-      return res.status(500).json({
-        msg: 'AI returned invalid JSON format',
-      });
+      return res.status(500).json({ msg: 'AI returned invalid JSON format' });
     }
 
-    res.json(parsed);
+    const recs = parsed.recommendations || parsed || [];
+
+    // Cache the recommendations
+    await CareerMatch.findOneAndUpdate(
+      { user: userId },
+      {
+        recommendations: Array.isArray(recs) ? recs : [],
+        generatedFrom: { careerInterests: userInterests, skillCount, hasResume },
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({ recommendations: recs });
 
   } catch (err) {
     console.error(err);
@@ -132,6 +157,14 @@ const simulateCareer = async (req, res) => {
       100 - avgGap - career.difficultyScore * 3
     );
 
+    // Fetch real-time job count from JSearch API
+    let jobData = { totalJobs: 0, jobs: [] };
+    try {
+      jobData = await searchJobs(career.name);
+    } catch (e) {
+      console.warn('Job search failed for simulation:', e.message);
+    }
+
     res.json({
       career: career.name,
       difficultyScore: career.difficultyScore,
@@ -140,6 +173,8 @@ const simulateCareer = async (req, res) => {
       totalHours: Math.ceil(totalHours),
       totalDays,
       probability: Math.round(probability),
+      totalJobs: jobData.totalJobs,
+      sampleJobs: jobData.jobs,
     });
 
   } catch (err) {

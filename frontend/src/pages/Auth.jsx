@@ -9,6 +9,7 @@ export default function Auth({ onLoginSuccess }) {
   const [showVerification, setShowVerification] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   
   // Form States
   const [name, setName] = useState('');
@@ -45,9 +46,8 @@ export default function Auth({ onLoginSuccess }) {
       } else {
         // Register API call
         const response = await authAPI.register({ name, email, password });
-        
-        // Show verification screen on successful registration
-        setShowVerification(true);
+        // Redirect user to OTP verification page with their email prefilled
+        window.location.href = `/verify-otp?email=${encodeURIComponent(email)}`;
       }
     } catch (err) {
       const errorMessage = err.response?.data?.msg || 
@@ -96,7 +96,7 @@ export default function Auth({ onLoginSuccess }) {
         <GlassCard className="p-8 !rounded-3xl shadow-2xl border-white/10 bg-[#161022]/80 backdrop-blur-2xl">
           <AnimatePresence mode="wait">
             
-            {/* --- STATE 2: EMAIL VERIFICATION SCREEN --- */}
+            {/* --- STATE 2: EMAIL VERIFICATION SCREEN (OTP) --- */}
             {showVerification ? (
               <motion.div 
                 key="verify"
@@ -112,27 +112,23 @@ export default function Auth({ onLoginSuccess }) {
                 </div>
                 
                 <h2 className="text-2xl font-bold text-white mb-2">Check Your Inbox</h2>
-                
+
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  We've sent a secure verification link to <br/>
-                  <span className="text-white font-bold">{email || "your email"}</span>. <br/>
-                  Please click the link to activate your account.
+                  We've sent a one-time verification code (OTP) to <br/>
+                  <span className="text-white font-bold">{email || "your email"}</span>.
                 </p>
 
                 <div className="pt-4">
-                  {/* Demo Button to simulate the email redirect */}
-                  <button 
-                    onClick={handleVerifySimulation}
-                    className="w-full py-3.5 bg-gradient-to-r from-[#8c5bf5] to-[#4f46e5] text-white font-bold rounded-xl flex items-center justify-center gap-2 hover:shadow-[0_0_20px_rgba(140,91,245,0.4)] hover:scale-[1.02] transition-all"
-                  >
-                    I've verified my email <ArrowRight size={18} />
-                  </button>
+                  <a href={`/verify-otp?email=${encodeURIComponent(email)}`} className="w-full inline-flex items-center justify-center gap-2 py-3.5 bg-gradient-to-r from-[#8c5bf5] to-[#4f46e5] text-white font-bold rounded-xl hover:shadow-[0_0_20px_rgba(140,91,245,0.4)] transition-all">
+                    Open verification page <ArrowRight size={18} />
+                  </a>
                 </div>
 
                 <div className="mt-6 pt-2 border-t border-white/10">
                   <p className="text-xs text-slate-400">
-                    Didn't receive the email? <button type="button" className="text-[#8c5bf5] font-bold hover:underline ml-1">Resend link</button>
+                    Didn't receive the code? <button type="button" onClick={async()=>{ try{ await authAPI.sendOtp(email); setMessage('OTP resent'); }catch(e){ setMessage('Failed to resend'); } }} className="text-[#8c5bf5] font-bold hover:underline ml-1">Resend OTP</button>
                   </p>
+                  {message && <p className="text-sm text-slate-300 mt-2">{message}</p>}
                 </div>
               </motion.div>
             ) : (
