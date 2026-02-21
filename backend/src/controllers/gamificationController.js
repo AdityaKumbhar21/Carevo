@@ -1,9 +1,11 @@
 const Gamification = require('../models/Gamification');
+const { awardBadgeIfEligible } = require('../services/badgeService');
 
-// XP → Level formula
+
 const calculateLevel = (xp) => {
   return Math.floor(xp / 200) + 1;
 };
+
 
 const checkIn = async (req, res) => {
   try {
@@ -11,9 +13,17 @@ const checkIn = async (req, res) => {
 
     let gam = await Gamification.findOne({ user: userId });
 
-    // Auto-create if not exists
+    
     if (!gam) {
-      gam = await Gamification.create({ user: userId });
+      gam = await Gamification.create({
+        user: userId,
+        streak: 0,
+        longestStreak: 0,
+        coins: 0,
+        xp: 0,
+        level: 1,
+        totalCheckIns: 0,
+      });
     }
 
     const now = new Date();
@@ -26,7 +36,7 @@ const checkIn = async (req, res) => {
     if (last) {
       last.setHours(0, 0, 0, 0);
 
-      // ❌ Already checked in today
+      
       if (now.getTime() === last.getTime()) {
         return res.status(400).json({
           msg: 'Already checked in today',
@@ -34,7 +44,7 @@ const checkIn = async (req, res) => {
       }
     }
 
-    // Check streak continuity
+  
     if (last) {
       const yesterday = new Date(now);
       yesterday.setDate(now.getDate() - 1);
@@ -48,12 +58,11 @@ const checkIn = async (req, res) => {
       gam.streak = 1;
     }
 
-    // Update longest streak
     if (gam.streak > gam.longestStreak) {
       gam.longestStreak = gam.streak;
     }
 
-    // Reward logic
+   
     const coinReward = 10;
     const xpReward = 50;
 
@@ -62,10 +71,12 @@ const checkIn = async (req, res) => {
     gam.totalCheckIns += 1;
     gam.lastCheckIn = now;
 
-    // Level recalculation
     gam.level = calculateLevel(gam.xp);
 
     await gam.save();
+
+    
+    await awardBadgeIfEligible(userId);
 
     res.json({
       msg: 'Check-in successful',
@@ -82,7 +93,6 @@ const checkIn = async (req, res) => {
 };
 
 
-
 const getStatus = async (req, res) => {
   try {
     const gam = await Gamification.findOne({ user: req.user._id });
@@ -90,9 +100,12 @@ const getStatus = async (req, res) => {
     if (!gam) {
       return res.json({
         streak: 0,
+        longestStreak: 0,
         coins: 0,
         xp: 0,
         level: 1,
+        totalCheckIns: 0,
+        lastCheckIn: null,
       });
     }
 
@@ -113,11 +126,23 @@ const getStatus = async (req, res) => {
 
 
 
-const rewardForTaskCompletion = async (userId, xpReward = 20, coinReward = 5) => {
+const rewardForTaskCompletion = async (
+  userId,
+  xpReward = 20,
+  coinReward = 5
+) => {
   let gam = await Gamification.findOne({ user: userId });
 
   if (!gam) {
-    gam = await Gamification.create({ user: userId });
+    gam = await Gamification.create({
+      user: userId,
+      streak: 0,
+      longestStreak: 0,
+      coins: 0,
+      xp: 0,
+      level: 1,
+      totalCheckIns: 0,
+    });
   }
 
   gam.xp += xpReward;
@@ -125,11 +150,13 @@ const rewardForTaskCompletion = async (userId, xpReward = 20, coinReward = 5) =>
   gam.level = calculateLevel(gam.xp);
 
   await gam.save();
-};
 
+  // 🏆 Badge check after task completion
+  await awardBadgeIfEligible(userId);
+};
 
 module.exports = {
   checkIn,
   getStatus,
-rewardForTaskCompletion,
+  rewardForTaskCompletion,
 };
