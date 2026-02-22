@@ -1,18 +1,17 @@
 {
-  "name": "backend",
+  "name": "carevo-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Carevo Backend API",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon src/index.js",
     "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
     "lint": "eslint ."
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^3.0.3",
