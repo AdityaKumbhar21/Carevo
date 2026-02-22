@@ -3,41 +3,51 @@ const Skill = require('../models/Skill');
 const User = require('../models/User');
 const { generateValidationQuizFromAI } = require('../services/quizAIService');
 
-
 /**
- * Generate Validation Quiz (Easy, Medium, Advanced)
- * Calls Gemini ONLY if quizzes do not already exist
+ * Generate Multi-Skill Validation Quiz
  */
 const generateValidationQuiz = async (req, res) => {
   try {
-    const { career, skill } = req.body;
+    const { career } = req.body;
 
-    if (!career || !skill) {
-      return res.status(400).json({ msg: 'Career and skill required' });
+    if (!career) {
+      return res.status(400).json({ msg: 'Career required' });
     }
+
+    // Fetch user skills for that career
+    const skillDoc = await Skill.findOne({
+      user: req.user.id,
+      career,
+    });
+
+    if (!skillDoc || !skillDoc.skills.length) {
+      return res.status(400).json({ msg: 'No skills found for this career' });
+    }
+
+    const skillNames = skillDoc.skills.map(s => s.name);
 
     // Check if all 3 levels already exist
     const existing = await Quiz.find({
       user: req.user.id,
       career,
-      skill,
       mode: 'validation',
     });
 
     if (existing.length === 3) {
-      const summary = existing.map(q => ({
-        level: q.level,
-        quizId: q._id
-      }));
-
       return res.json({
         msg: 'Validation quizzes already exist',
-        quizzes: summary
+        quizzes: existing.map(q => ({
+          level: q.level,
+          quizId: q._id
+        }))
       });
     }
 
-    // Call Gemini ONLY if quizzes not found
-    const aiData = await generateValidationQuizFromAI({ career, skill });
+    // Call Gemini with ALL skills
+    const aiData = await generateValidationQuizFromAI({
+      career,
+      skill: skillNames.join(', ')
+    });
 
     const levels = ['easy', 'medium', 'advanced'];
     const createdQuizzes = [];
@@ -48,7 +58,7 @@ const generateValidationQuiz = async (req, res) => {
       const quiz = await Quiz.create({
         user: req.user.id,
         career,
-        skill,
+        skills: skillNames, // <-- MULTI SKILL
         level,
         mode: 'validation',
         status: 'generated',
@@ -84,12 +94,11 @@ const generateValidationQuiz = async (req, res) => {
  */
 const getValidationQuiz = async (req, res) => {
   try {
-    const { career, skill, level } = req.query;
+    const { career, level } = req.query;
 
     const quiz = await Quiz.findOne({
       user: req.user.id,
       career,
-      skill,
       level,
       mode: 'validation',
       status: 'generated',
@@ -114,8 +123,7 @@ const getValidationQuiz = async (req, res) => {
 
 /**
  * Submit Quiz
- * No pass/fail threshold
- * All levels must be attempted
+ * Updates ALL skills involved
  */
 const submitQuiz = async (req, res) => {
   try {
@@ -149,7 +157,7 @@ const submitQuiz = async (req, res) => {
       ? (correct / quiz.totalQuestions) * 100
       : 0;
 
-    // Update quiz (NO pass/fail logic)
+    // Update quiz
     quiz.score = accuracy;
     quiz.accuracy = accuracy;
     quiz.correctCount = correct;
@@ -159,76 +167,68 @@ const submitQuiz = async (req, res) => {
 
     await quiz.save();
 
-    // Ensure Skill document exists
+    // Fetch skill document
     let userSkillDoc = await Skill.findOne({
       user: req.user.id,
       career: quiz.career
     });
 
     if (!userSkillDoc) {
-      userSkillDoc = await Skill.create({
-        user: req.user.id,
-        career: quiz.career,
-        skills: [],
-      });
+      return res.status(400).json({ msg: 'Skill document not found' });
     }
 
-    const skillNameLC = (quiz.skill || '').toLowerCase();
+    // Update EACH skill in this quiz
+    for (const skillName of quiz.skills) {
+      const skillNameLC = skillName.toLowerCase();
 
-    let skillObj = userSkillDoc.skills.find(
-      s => (s.name || '').toLowerCase() === skillNameLC
-    );
+      let skillObj = userSkillDoc.skills.find(
+        s => (s.name || '').toLowerCase() === skillNameLC
+      );
 
-    if (!skillObj) {
-      skillObj = {
-        name: skillNameLC,
-        selfRating: 0,
-        validatedScore: accuracy,
-        finalScore: Math.round(0.6 * accuracy),
-        highestQuizLevelCleared: quiz.level, // always update
-        totalAttempts: 1,
-        lastQuizAttemptDate: new Date(),
-      };
+      if (!skillObj) continue;
 
-      userSkillDoc.skills.push(skillObj);
-    } else {
       skillObj.validatedScore = accuracy;
-      skillObj.highestQuizLevelCleared = quiz.level;
       skillObj.totalAttempts = (skillObj.totalAttempts || 0) + 1;
       skillObj.lastQuizAttemptDate = new Date();
+
       skillObj.finalScore = Math.round(
         (0.4 * (skillObj.selfRating || 0)) + (0.6 * accuracy)
       );
+
+      // Update highest level cleared progressively
+      if (!skillObj.highestQuizLevelCleared) {
+        skillObj.highestQuizLevelCleared = quiz.level;
+      } else {
+        const order = { easy: 1, medium: 2, advanced: 3 };
+        if (order[quiz.level] > order[skillObj.highestQuizLevelCleared]) {
+          skillObj.highestQuizLevelCleared = quiz.level;
+        }
+      }
     }
 
     await userSkillDoc.save();
 
-    // Recompute career fit score
+    // Update career fit score
     try {
       const user = await User.findById(req.user.id);
 
       const finalScores = userSkillDoc.skills
         .map(s => s.finalScore)
-        .filter(v => typeof v === 'number' && !isNaN(v));
+        .filter(v => typeof v === 'number');
 
-      let avg = 0;
-
-      if (finalScores.length > 0) {
-        avg = finalScores.reduce((a, b) => a + b, 0) / finalScores.length;
-      }
-
-      avg = Math.round(Number(avg) || 0);
+      const avg = finalScores.length
+        ? Math.round(finalScores.reduce((a, b) => a + b, 0) / finalScores.length)
+        : 0;
 
       user.careerFitScores = user.careerFitScores || {};
       user.careerFitScores[quiz.career] = avg;
 
       await user.save();
-
     } catch (e) {
       console.error('Failed to update career fit score:', e);
     }
 
-    // Always allow next level
+    // Next level logic
     let nextLevel = null;
     if (quiz.level === 'easy') nextLevel = 'medium';
     if (quiz.level === 'medium') nextLevel = 'advanced';

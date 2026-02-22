@@ -14,12 +14,10 @@ const QuizSchema = new mongoose.Schema(
       trim: true,
     },
 
-    skill: {
-      type: String,
-      required: true,
-      lowercase: true,
-      trim: true,
-    },
+      skills: {
+    type: [String],
+    required: true,
+  },
 
     level: {
       type: String,
@@ -105,7 +103,7 @@ const QuizSchema = new mongoose.Schema(
 
 
 QuizSchema.index(
-  { user: 1, career: 1, skill: 1, level: 1, mode: 1 },
+  { user: 1, career: 1, level: 1, mode: 1 },
   { unique: true }
 );
 
