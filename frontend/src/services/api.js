@@ -76,6 +76,7 @@ export const profileAPI = {
 
   getProfile: () =>
     API.get('/user/profile'),
+
 };
 
 

@@ -161,8 +161,8 @@ export default function App() {
         <GlassCard className="h-full flex flex-col p-6">
 
           <div className="flex items-center gap-3 mb-10 px-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-[#8c5bf5] to-[#4f46e5] rounded-xl flex items-center justify-center text-white">
-              <Activity size={24} />
+            <div className="w-10 h-10 rounded-xl overflow-hidden">
+              <img src="/logo.png" alt="CAREVO" className="w-full h-full object-cover" />
             </div>
             <div>
               <h2 className="font-bold text-lg uppercase">CAREVO</h2>
@@ -226,6 +226,7 @@ export default function App() {
         <Routes>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/career-match" element={<CareerMatch />} />
+          
           <Route path="/roadmap" element={<Roadmap />} />
           <Route path="/today" element={<Today />} />
           <Route path="/trajectory" element={<Analytics />} />

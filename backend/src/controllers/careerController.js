@@ -85,7 +85,7 @@ const getRecommendations = async (req, res) => {
         recommendations: Array.isArray(recs) ? recs : [],
         generatedFrom: { careerInterests: userInterests, skillCount, hasResume },
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     res.json({ recommendations: recs });

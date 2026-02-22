@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, Target, Sliders, BrainCircuit, ArrowRight, ArrowLeft, CheckCircle2, Code, Database, Layout, Shield, Cloud, Terminal, AlertCircle, TrendingUp, Briefcase, ChevronDown, Plus, X } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { careerAPI, profileAPI } from '../services/api';
+import { createWorker } from 'tesseract.js';
 
 // Icon mapping by career name
 const CAREER_ICON_MAP = {
@@ -286,6 +287,8 @@ export default function Onboarding({ onComplete }) {
     exit: { x: -50, opacity: 0 }
   };
 
+  
+
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center relative overflow-hidden bg-[#0a0b1e] p-6">
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#8c5bf5]/20 blur-[120px] rounded-full pointer-events-none" />
@@ -435,14 +438,123 @@ export default function Onboarding({ onComplete }) {
                     <div className="space-y-2 md:col-span-2">
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Resume <span className="text-slate-600 normal-case font-normal">(optional — paste plain text)</span></label>
                       <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4">
-                        <textarea
-                          placeholder="Paste your resume text here (optional)."
-                          value={resumeText}
-                          onChange={(e) => { setResumeText(e.target.value); setExtractedSkills([]); setExtractedExperience([]); }}
-                          className="w-full min-h-[140px] bg-transparent text-sm text-slate-200 placeholder-slate-500 p-3 rounded resize-y focus:outline-none border border-white/5"
-                        />
-                        <p className="text-xs text-slate-500 mt-2">Tip: Paste plain text or copy-paste from your document. PDF/image OCR is disabled for now.</p>
-                      </div>
+                          <textarea
+                            placeholder="Paste your resume text here (optional)."
+                            value={resumeText}
+                            onChange={(e) => { setResumeText(e.target.value); setExtractedSkills([]); setExtractedExperience([]); }}
+                            className="w-full min-h-[140px] bg-transparent text-sm text-slate-200 placeholder-slate-500 p-3 rounded resize-y focus:outline-none border border-white/5"
+                          />
+                          <div className="mt-3 flex flex-col sm:flex-row gap-3 items-start">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                              <input
+                                type="file"
+                                accept="application/pdf,image/*"
+                                onChange={(e) => { setResumeFile(e.target.files?.[0] || null); }}
+                                className="hidden"
+                              />
+                              <span className="px-4 py-2 bg-white/5 rounded-xl text-sm text-slate-300">Choose file</span>
+                              <span className="text-xs text-slate-500">{resumeFile ? resumeFile.name : 'No file selected'}</span>
+                            </label>
+
+                            <button
+                              type="button"
+                              disabled={!resumeFile || isExtracting}
+                              onClick={async () => {
+                                  if (!resumeFile) return;
+                                  try {
+                                    setIsExtracting(true);
+                                    setOcrProgress(0);
+
+                                    // Resolve createWorker robustly in case of different bundler/module shapes
+                                    const resolveCreateWorker = async () => {
+                                      if (typeof createWorker === 'function') return createWorker;
+                                      try {
+                                        const mod = await import('tesseract.js');
+                                        return mod.createWorker || (mod.default && mod.default.createWorker);
+                                      } catch (e) {
+                                        return null;
+                                      }
+                                    };
+
+                                    const createWorkerFn = await resolveCreateWorker();
+                                    if (!createWorkerFn) throw new Error('tesseract.createWorker not available');
+
+                                    const worker = createWorkerFn({
+                                      logger: (m) => {
+                                        if (m && m.progress) setOcrProgress(Math.round(m.progress * 100));
+                                      }
+                                    });
+
+                                    if (typeof worker.load !== 'function') {
+                                      // Some builds return a Promise that resolves to a worker instance
+                                      if (worker && typeof worker.then === 'function') {
+                                        const realWorker = await worker;
+                                        if (!realWorker) throw new Error('Invalid tesseract worker API');
+                                        // call lifecycle methods only if present
+                                        if (typeof realWorker.load === 'function') await realWorker.load();
+                                        if (typeof realWorker.loadLanguage === 'function') await realWorker.loadLanguage('eng');
+                                        if (typeof realWorker.initialize === 'function') await realWorker.initialize('eng');
+
+                                        const arrayBuffer = await resumeFile.arrayBuffer();
+                                        const { data: { text } } = await realWorker.recognize(new Uint8Array(arrayBuffer));
+                                        if (typeof realWorker.terminate === 'function') await realWorker.terminate();
+
+                                        const extracted = text || '';
+                                        setResumeText(extracted);
+
+                                        const parsed = parseResumeForSkillsAndExperience(extracted);
+                                        setExtractedSkills(parsed.skills || []);
+                                        setExtractedExperience(parsed.experience || []);
+
+                                        try { await profileAPI.updateProfile({ resumeText: extracted }); } catch (saveErr) { console.error('Failed to save resumeText to profile', saveErr); setError('Saved locally but failed to persist to server.'); }
+                                        return;
+                                      }
+                                      throw new Error('tesseract worker API missing lifecycle methods');
+                                    }
+
+                                    // call lifecycle methods only when available (newer builds may pre-load workers)
+                                    if (typeof worker.load === 'function') await worker.load();
+                                    if (typeof worker.loadLanguage === 'function') await worker.loadLanguage('eng');
+                                    if (typeof worker.initialize === 'function') await worker.initialize('eng');
+
+                                    const arrayBuffer = await resumeFile.arrayBuffer();
+                                    const { data: { text } } = await worker.recognize(new Uint8Array(arrayBuffer));
+
+                                    await worker.terminate();
+
+                                  const extracted = text || '';
+                                  setResumeText(extracted);
+
+                                  // parse for skills/experience client-side
+                                  const parsed = parseResumeForSkillsAndExperience(extracted);
+                                  setExtractedSkills(parsed.skills || []);
+                                  setExtractedExperience(parsed.experience || []);
+
+                                  // Persist extracted text to backend as resumeText
+                                  try {
+                                    await profileAPI.updateProfile({ resumeText: extracted });
+                                  } catch (saveErr) {
+                                    console.error('Failed to save resumeText to profile', saveErr);
+                                    setError('Saved locally but failed to persist to server.');
+                                  }
+
+                                } catch (e) {
+                                  console.error('OCR failed', e);
+                                  setError('Failed to extract text from the uploaded file.');
+                                } finally {
+                                  setIsExtracting(false);
+                                  setOcrProgress(0);
+                                }
+                              }}
+                              className={`px-4 py-2 rounded-xl font-bold ${resumeFile ? 'bg-[#8c5bf5] text-white' : 'bg-white/5 text-slate-500 cursor-not-allowed'}`}
+                            >
+                              {isExtracting ? `Extracting (${ocrProgress}%)` : 'Extract & Save'}
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-2">Tip: You can paste resume text or upload a PDF/image to extract text (OCR).</p>
+
+                          
+                        </div>
                     </div>
                   </div>
                 </div>

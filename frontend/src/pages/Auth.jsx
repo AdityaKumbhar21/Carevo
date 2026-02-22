@@ -86,11 +86,11 @@ export default function Auth({ onLoginSuccess }) {
       >
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 bg-gradient-to-br from-[#8c5bf5] to-[#4f46e5] rounded-2xl flex items-center justify-center text-white shadow-[0_0_20px_rgba(140,91,245,0.4)] mb-4">
-            <Activity size={32} strokeWidth={2.5} />
+          <div className="w-14 h-14 rounded-2xl overflow-hidden mb-4">
+            <img src="/logo.png" alt="CAREVO" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-3xl font-black tracking-tight text-white uppercase">CAREVO</h1>
-          <p className="text-slate-400 text-sm mt-1">AI Career Intelligence</p>
+          <p className="text-slate-400 text-sm mt-1">Your AI Career Copilot</p>
         </div>
 
         <GlassCard className="p-8 !rounded-3xl shadow-2xl border-white/10 bg-[#161022]/80 backdrop-blur-2xl">

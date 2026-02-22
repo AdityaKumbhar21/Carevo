@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { TrendingUp, Hexagon, LineChart, Calendar, Target, Download, Briefcase, ExternalLink, DollarSign, Award, BarChart3 } from 'lucide-react';
+import { safePath } from '../utils/svg';
 import { motion } from 'framer-motion';
 import { GlassCard } from '../components/GlassCard';
 import { analyticsAPI, profileAPI } from '../services/api';
@@ -322,9 +323,9 @@ export default function Analytics() {
                     <stop offset="100%" stopColor="#8c5bf5" stopOpacity="0"></stop>
                   </linearGradient>
                 </defs>
-                <path d="M0,220 C100,210 200,180 300,160 C400,140 500,80 600,60 C700,40 800,20 L800,240 L0,240 Z" fill="url(#areaGradient)"></path>
-                <path d="M0,220 C100,210 200,180 300,160 C400,140 500,80 600,60 C700,40 800,20" fill="none" stroke="#8c5bf5" strokeWidth="3" strokeLinecap="round" style={{ filter: 'drop-shadow(0 0 8px rgba(140, 91, 245, 0.5))' }}></path>
-                <path d="M0,230 C150,220 300,200 450,180 C600,160 750,140 800,135" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" strokeDasharray="8,4"></path>
+                <path d={safePath("M0,220 C100,210 200,180 300,160 C400,140 500,80 600,60 C700,40 800,20 L800,240 L0,240 Z")} fill="url(#areaGradient)"></path>
+                <path d={safePath("M0,220 C100,210 200,180 300,160 C400,140 500,80 600,60 C700,40 800,20")} fill="none" stroke="#8c5bf5" strokeWidth="3" strokeLinecap="round" style={{ filter: 'drop-shadow(0 0 8px rgba(140, 91, 245, 0.5))' }}></path>
+                <path d={safePath("M0,230 C150,220 300,200 450,180 C600,160 750,140 800,135")} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" strokeDasharray="8,4"></path>
               </svg>
               
               <div className="flex justify-between mt-4 text-[10px] font-bold text-slate-500 tracking-tighter uppercase">

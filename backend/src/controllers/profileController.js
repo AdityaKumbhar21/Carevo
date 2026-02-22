@@ -85,7 +85,7 @@ const setupProfile = async (req, res) => {
           await Skill.findOneAndUpdate(
             { user: user._id, career: careerName },
             { user: user._id, career: careerName, skills: skillsForCareer },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
           );
         }
       }
@@ -154,8 +154,10 @@ const getProfile = async (req, res) => {
     res.status(500).json({ msg: 'Server error' });
   }
 };
+
 module.exports = {
   setupProfile,
   updateProfile,
   getProfile,
+  // uploadResumeOCR removed: OCR is handled client-side
 };

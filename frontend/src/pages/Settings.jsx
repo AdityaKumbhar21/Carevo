@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Mail, Clock, Lock, Shield, Trash2, Loader2, FileText, Upload, CheckCircle2, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { GlassCard } from '../components/GlassCard';
-import { profileAPI } from '../services/api';
+import { profileAPI, careerAPI } from '../services/api';
 
 export default function Settings() {
   const [reminders, setReminders] = useState(true);
@@ -15,6 +15,8 @@ export default function Settings() {
   const [resumeSaved, setResumeSaved] = useState(false);
   const [resumeError, setResumeError] = useState('');
   const fileInputRef = useRef(null);
+
+  // Settings: no embedded Course Intelligence UI
 
   // PDF OCR disabled: prefer plain text resume uploads or paste into settings
   const extractTextFromPDF = async (file) => {
@@ -109,6 +111,8 @@ export default function Settings() {
     };
     fetchProfile();
   }, []);
+
+  // No course intelligence effect (feature removed)
 
   const itemAnim = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4 } } };
 

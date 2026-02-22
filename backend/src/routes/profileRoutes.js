@@ -8,7 +8,7 @@ const {
 const {
   setupProfile,
   getProfile,
-  updateProfile
+  updateProfile,
 } = require('../controllers/profileController');
 
 const router = express.Router();
@@ -16,5 +16,7 @@ const router = express.Router();
 router.post('/setup', protect, validate(setupProfileSchema), setupProfile);
 router.put('/update', protect, validate(updateProfileSchema), updateProfile);
 router.get('/', protect, getProfile);
+// OCR upload: accepts file and returns extracted text (saves to user.resumeText)
+// Note: OCR is performed client-side; no server-side OCR route required.
 
 module.exports = router;

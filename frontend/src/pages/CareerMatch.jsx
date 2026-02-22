@@ -227,6 +227,7 @@ export default function CareerMatch() {
                     </div>
                     <button 
                       onClick={() => { setSelectedCareer(null); setSimulation(null); }}
+                      aria-label="Close simulation"
                       className="text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 p-2.5 rounded-full transition-all hover:rotate-90 duration-300"
                     >
                       <X size={18} />
@@ -391,6 +392,14 @@ export default function CareerMatch() {
                       Close Simulation
                     </button>
                   </div>
+                  {/* Extra fixed close for accessibility/visibility */}
+                  <button
+                    onClick={() => { setSelectedCareer(null); setSimulation(null); }}
+                    aria-label="Close simulation"
+                    className="absolute top-4 right-4 p-2.5 rounded-full bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white z-30"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
               </div>
             </motion.div>

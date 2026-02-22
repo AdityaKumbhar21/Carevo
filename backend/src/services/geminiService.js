@@ -85,7 +85,6 @@ You are an AI career intelligence engine.
 Given:
 1. User profile (Career DNA)
 2. Available career options with required skills
-${resumeContext ? '3. User resume/CV text for additional context' : ''}
 
 Return ONLY valid JSON in this exact format:
 

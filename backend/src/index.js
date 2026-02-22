@@ -43,6 +43,7 @@ app.use('/api/career-dna', careerDbaRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/badges', badgeRoutes);
+// Course Intelligence routes removed
 
 const PORT = process.env.PORT || 5001;
 
