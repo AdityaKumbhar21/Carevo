@@ -21,35 +21,44 @@ const getCareers = async (req, res) => {
 
 const getRecommendations = async (req, res) => {
   try {
-    const user = req.user; // from protect middleware
+    const user = req.user;
     const userId = user._id;
 
-    const skillDoc = await Skill.find({ user: userId });
     const careers = await Career.find();
-
     if (!careers.length) {
       return res.status(404).json({ msg: 'No careers available' });
     }
 
-    // Check if we have cached recommendations that are still valid
-    const cached = await CareerMatch.findOne({ user: userId });
-    const userInterests = user.careerInterests || [];
-    const skillCount = skillDoc.reduce((sum, d) => sum + (d.skills?.length || 0), 0);
-    const hasResume = !!(user.resumeText);
+    const skillDocs = await Skill.find({ user: userId });
 
-    if (cached && cached.recommendations.length > 0) {
-      // Return cached if interests, skill count, and resume status haven't changed
-      const sameInterests = JSON.stringify(cached.generatedFrom?.careerInterests || []) === JSON.stringify(userInterests);
-      const sameSkills = (cached.generatedFrom?.skillCount || 0) === skillCount;
-      const sameResume = (cached.generatedFrom?.hasResume || false) === hasResume;
-      if (sameInterests && sameSkills && sameResume) {
-        return res.json({ recommendations: cached.recommendations });
+    const userInterests = user.careerInterests || [];
+    const skillCount = skillDocs.reduce(
+      (sum, d) => sum + (d.skills?.length || 0),
+      0
+    );
+
+    const existing = await CareerMatch.findOne({ user: userId });
+
+    // ✅ If exists AND no changes → return DB version
+    if (existing) {
+      const sameInterests =
+        JSON.stringify(existing.generatedFrom?.careerInterests || []) ===
+        JSON.stringify(userInterests);
+
+      const sameSkills =
+        (existing.generatedFrom?.skillCount || 0) === skillCount;
+
+      if (sameInterests && sameSkills) {
+        console.log("Returning recommendations from MongoDB");
+        return res.json({
+          recommendations: existing.recommendations,
+        });
       }
     }
 
-    // Flatten user skills across careers
+    // ✅ Build abilities only if regeneration required
     const abilities = [];
-    skillDoc.forEach(doc => {
+    skillDocs.forEach(doc => {
       doc.skills.forEach(s => {
         abilities.push({
           name: s.name,
@@ -65,30 +74,25 @@ const getRecommendations = async (req, res) => {
       resumeText: user.resumeText || '',
     };
 
-    const rawRecommendations = await generateRecommendations(userDNA, careers);
+    console.log("Calling Gemini for fresh recommendations...");
 
-    let parsed;
-    try {
-      parsed = typeof rawRecommendations === 'string'
-        ? JSON.parse(rawRecommendations)
-        : rawRecommendations;
-    } catch (e) {
-      return res.status(500).json({ msg: 'AI returned invalid JSON format' });
-    }
+    const aiResult = await generateRecommendations(userDNA, careers);
+    const recommendations = aiResult.recommendations || [];
 
-    const recs = parsed.recommendations || parsed || [];
-
-    // Cache the recommendations
     await CareerMatch.findOneAndUpdate(
       { user: userId },
       {
-        recommendations: Array.isArray(recs) ? recs : [],
-        generatedFrom: { careerInterests: userInterests, skillCount, hasResume },
+        user: userId,
+        recommendations,
+        generatedFrom: {
+          careerInterests: userInterests,
+          skillCount,
+        },
       },
-      { upsert: true, returnDocument: 'after' }
+      { upsert: true, new: true }
     );
 
-    res.json({ recommendations: recs });
+    res.json({ recommendations });
 
   } catch (err) {
     console.error(err);
@@ -96,9 +100,7 @@ const getRecommendations = async (req, res) => {
   }
 };
 
-// ======================================================
-// CAREER SIMULATION ENGINE
-// ======================================================
+
 const simulateCareer = async (req, res) => {
   try {
     const { careerId } = req.body;

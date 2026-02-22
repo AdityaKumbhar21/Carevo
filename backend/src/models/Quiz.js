@@ -103,6 +103,10 @@ const QuizSchema = new mongoose.Schema(
 );
 
 
-QuizSchema.index({ user: 1, career: 1, skill: 1, level: 1 });
+
+QuizSchema.index(
+  { user: 1, career: 1, skill: 1, level: 1, mode: 1 },
+  { unique: true }
+);
 
 module.exports = mongoose.model('Quiz', QuizSchema);

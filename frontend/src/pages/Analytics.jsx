@@ -65,7 +65,7 @@ export default function Analytics() {
     }
   };
 
-  useEffect(() => { fetchAnalytics(); }, [selectedPeriod]);
+useEffect(() => { fetchAnalytics(); }, []);
 
   // Re-fetch when contributions change elsewhere in the app
   useEffect(() => {

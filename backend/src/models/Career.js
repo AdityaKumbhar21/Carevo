@@ -63,6 +63,11 @@ const CareerSchema = new mongoose.Schema(
         },
       },
     ],
+    jobMarketData: {
+    totalJobs: { type: Number, default: 0 },
+    sampleJobs: { type: Array, default: [] },
+    lastFetchedAt: { type: Date }
+}
   },
   { timestamps: true }
 );

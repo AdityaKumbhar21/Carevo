@@ -66,44 +66,55 @@ const generateWithRetry = async (model, prompt, opts = {}) => {
 const generateValidationQuizFromAI = async ({ career, skill }) => {
   try {
     const prompt = `
-You are an expert technical educator.
+    You are an expert technical interviewer and educator.
 
-Generate a validation quiz for:
+    Generate a structured validation quiz.
 
-Career: ${career}
-Skill: ${skill}
+    Career: ${career}
+    Skills to Cover: ${skill}
 
-Requirements:
-- Create exactly 3 levels: easy, medium, advanced.
-- Each level must have exactly 5 multiple-choice questions.
-- Each question must have:
-  - question (string)
-  - options (array of 4 strings)
-  - correctAnswer (must be exactly one of the options)
+    Important Rules:
+    - The quiz MUST cover ALL listed skills evenly.
+    - Do NOT focus on only one skill.
+    - Distribute questions proportionally across the skills.
+    - Each level should test multiple different skills.
+    - Ensure conceptual variety.
 
-Output ONLY valid JSON in this exact structure:
+    Structure Requirements:
+    - Create exactly 3 levels: easy, medium, advanced.
+    - Each level must contain exactly 6 multiple-choice questions.
+    - Questions must be distributed across the provided skills.
+    - Each question must include:
+      - question (string)
+      - options (array of 4 strings)
+      - correctAnswer (must exactly match one of the options)
 
-{
-  "easy": [
-    { "question": "...", "options": ["A","B","C","D"], "correctAnswer": "A" }
-  ],
-  "medium": [
-    { "question": "...", "options": ["A","B","C","D"], "correctAnswer": "A" }
-  ],
-  "advanced": [
-    { "question": "...", "options": ["A","B","C","D"], "correctAnswer": "A" }
-  ]
-}
+    Example Skill Distribution (if 3 skills provided):
+    - At least 2 questions per skill per level.
 
-Do NOT:
-- Use markdown
-- Use code blocks
-- Add explanations
-- Add extra text
-- Wrap in \`\`\`json
+    Output ONLY valid raw JSON in this exact format:
 
-Return ONLY raw JSON.
-`;
+    {
+      "easy": [
+        { "question": "...", "options": ["A","B","C","D"], "correctAnswer": "A" }
+      ],
+      "medium": [
+        { "question": "...", "options": ["A","B","C","D"], "correctAnswer": "A" }
+      ],
+      "advanced": [
+        { "question": "...", "options": ["A","B","C","D"], "correctAnswer": "A" }
+      ]
+    }
+
+    Do NOT:
+    - Use markdown
+    - Use code blocks
+    - Add explanations
+    - Add extra text
+    - Wrap in \`\`\`
+
+    Return ONLY raw JSON.
+    `;
 
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash'
@@ -118,10 +129,10 @@ Return ONLY raw JSON.
     const levels = ['easy', 'medium', 'advanced'];
 
     for (const level of levels) {
-      if (!Array.isArray(parsed[level]) || parsed[level].length !== 5) {
+      if (!Array.isArray(parsed[level]) || parsed[level].length !== 6) {
         throw new Error(`AI response missing or invalid level: ${level}`);
       }
-
+      
       parsed[level].forEach((q, index) => {
         if (
           !q.question ||

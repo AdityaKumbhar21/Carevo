@@ -36,6 +36,7 @@ import Today from './pages/Today';
 import Analytics from './pages/Analytics';
 import Gamification from './pages/Gamification';
 import Settings from './pages/Settings';
+import Landing from './pages/Landing';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() =>
@@ -102,6 +103,10 @@ export default function App() {
       <Routes>
         <Route
           path="/"
+          element={<Landing onStart={() => navigate('/auth')} />}
+        />
+        <Route
+          path="/auth"
           element={<Auth onLoginSuccess={() => setIsAuthenticated(true)} />}
         />
         <Route path="/verify-otp" element={<OTPVerify />} />
